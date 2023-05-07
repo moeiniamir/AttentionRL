@@ -1,5 +1,3 @@
-
-
 class PolicyNetwork(nn.Module):
     def __init__(self, word_to_idx, input_dim=512, wordvec_dim=512, hidden_dim=512, dtype=np.float32):
         super(PolicyNetwork, self).__init__()

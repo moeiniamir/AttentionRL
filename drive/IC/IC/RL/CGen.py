@@ -31,12 +31,12 @@ def GenerateCaptionsWithBeamSearch(features, captions, model, beamSize=5):
 ## LookAhead Inference using policy and value network
 
 def GenerateCaptionsWithBeamSearchValueScoring(features, captions, model, beamSize=5):
-    features = torch.tensor(features, device=device).float().unsqueeze(0)
-    gen_caps = torch.tensor(captions[:, 0:1], device=device).long()
-    candidates = [(gen_caps, 0)]
-    for t in range(max_seq_len-1):
-        next_candidates = []
-        for c in range(len(candidates)):
+        features = torch.tensor(features, device=device).float().unsqueeze(0)
+        gen_caps = torch.tensor(captions[:, 0:1], device=device).long()
+        candidates = [(gen_caps, 0)]
+        for t in range(max_seq_len-1):
+            next_candidates = []
+            for c in range(len(candidates)):
             output = model(features, candidates[c][0])
             probs, words = torch.topk(output[:, -1:, :], beamSize)
             for i in range(beamSize):

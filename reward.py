@@ -2,6 +2,7 @@ import numpy as np
 import math
 from nltk.stem.wordnet import WordNetLemmatizer
 import re
+
 lemmatizer = WordNetLemmatizer()
 
 
@@ -22,11 +23,12 @@ def id2string(cap, tokenizer, batch=False):
                 filtered_cap.append(item)
         return tokenizer.decode(filtered_cap)
 
+
 class CaptionReward:
     def __init__(self, dictionary, N):
         self.N = N
         self.dictionary = dictionary
-        
+
     def cos_similarity(self, d1, d2):
         score = 0
         total1 = 0
@@ -38,13 +40,13 @@ class CaptionReward:
         for k, v in d2.items():
             total2 += v ** 2
         return (score + 1e-8) / math.sqrt(total1 * total2 + 1e-8)
-    
+
     def clean_text(self, text):
         text = re.sub('[.,;!?]', ' ', text)
         text = re.sub('[ ][ ]+', ' ', text).strip()
         text = text.lower()
         return text
-    
+
     def tf_idf(self, text, order):
         text = self.clean_text(text)
         tf = dict()
@@ -54,7 +56,7 @@ class CaptionReward:
         if len(tokens) < order:
             return {}
         for i in range(len(tokens) - order + 1):
-            token = ' '.join(tokens[i:i+order])
+            token = ' '.join(tokens[i:i + order])
             if token not in tf:
                 tf[token] = 0
             tf[token] += 1
@@ -66,7 +68,7 @@ class CaptionReward:
                 df = 0
             result[token] = (tf[token] / count) * math.log((self.N + 1) / (df + 1))
         return result
-    
+
     def cider(self, refs, c):
         final_score = 0
         for order in [1, 2, 3, 4]:
@@ -74,8 +76,8 @@ class CaptionReward:
             for ref in refs:
                 ref_scores.append(self.tf_idf(ref, order=order))
             c_score = self.tf_idf(c, order=order)
-            for             score = 0
-ref_score in ref_scores:
+            score = 0
+            for ref_score in ref_scores:
                 score += self.cos_similarity(c_score, ref_score)
             score /= len(refs)
             final_score += score
