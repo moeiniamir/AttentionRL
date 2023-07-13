@@ -12,7 +12,7 @@ class CustomDQNPolicy(DQNPolicy):
             act: Union[np.ndarray, Batch],
             batch: Batch,
     ) -> Union[np.ndarray, Batch]:
-        print(f"{act=}")
+        print(f"{act=}", end='')
         return super().exploration_noise(act, batch)
 
 
