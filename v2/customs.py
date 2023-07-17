@@ -19,6 +19,7 @@ class CustomDQNPolicy(DQNPolicy):
 class CustomOffpolicyTrainer(OffpolicyTrainer):
     def policy_update_fn(self, data: Dict[str, Any], result: Dict[str, Any]) -> None:
         """Perform off-policy updates."""
+        # print(f"{data=}\n{result=}")
         assert self.train_collector is not None
         for _ in range(round(self.update_per_step * result["n/st"])):
             self.gradient_step += 1
