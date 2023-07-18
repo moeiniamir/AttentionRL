@@ -6,7 +6,24 @@ import torch
 from transformers.models.vit.modeling_vit import *
 from tianshou.policy import DQNPolicy
 
+def polyack_sync(self):
+    current_state_dict = self.model.state_dict()
+    old_state_dict = self.model_old.state_dict()
+
+    for key in old_state_dict:
+        old_state_dict[key] = self.polyak * old_state_dict[key] + (1 - self.polyak) * current_state_dict[key]
+
+
 class CustomDQNPolicy(DQNPolicy):
+    def __init__(self, *args, **kwargs):
+        self.polyak = kwargs.pop('polyak', None)
+        if self.polyak:
+            kwargs['target_update_freq'] = 1
+
+            self.sync_weight = polyack_sync
+
+        super().__init__(*args, **kwargs)
+
     def exploration_noise(
             self,
             act: Union[np.ndarray, Batch],
@@ -44,9 +61,8 @@ class CustomViTEmbeddings(ViTEmbeddings):
         if bool_masked_pos is not None:
             seq_length = embeddings.shape[1]
             mask_tokens = self.mask_token.expand(batch_size, seq_length, -1)
-            # replace the masked visual tokens by mask_tokens
-            mask = bool_masked_pos.type_as(mask_tokens)
-            embeddings = embeddings * (1.0 - mask) + mask_tokens * mask
+            # remove the masked tokens from the embeddings
+            
 
         # add the [CLS] token to the embedded patch tokens
         cls_tokens = self.cls_token.expand(batch_size, -1, -1)
