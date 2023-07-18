@@ -60,9 +60,8 @@ class CustomViTEmbeddings(ViTEmbeddings):
 
         if bool_masked_pos is not None:
             seq_length = embeddings.shape[1]
-            mask_tokens = self.mask_token.expand(batch_size, seq_length, -1)
-            # remove the masked tokens from the embeddings
-            
+            # remove the masked embeddings
+            raise NotImplementedError
 
         # add the [CLS] token to the embedded patch tokens
         cls_tokens = self.cls_token.expand(batch_size, -1, -1)
