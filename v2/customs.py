@@ -48,7 +48,7 @@ def custom_offpolicy_trainer(*args, **kwargs) -> Dict[str, Union[float, str]]:  
     return CustomOffpolicyTrainer(*args, **kwargs).run()
 
 
-class CustomViTEmbeddings(ViTEmbeddings):
+class MaskOmittingViTEmbeddings(ViTEmbeddings):
     def forward(
             self,
             pixel_values: torch.Tensor,
@@ -78,7 +78,9 @@ class CustomViTEmbeddings(ViTEmbeddings):
         return embeddings
 
 
-class CustomViTModel(ViTModel):
-    def __init__(self, config: ViTConfig, add_pooling_layer: bool = True, use_mask_token: bool = False):
-        super().__init__(config, add_pooling_layer, use_mask_token)
-        self.embeddings = CustomViTEmbeddings(config, use_mask_token=use_mask_token)
+class ExtendableViTModel(ViTModel):
+    """
+    can add n attention heads to the model.
+
+    """
+    pass
