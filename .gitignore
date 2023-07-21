@@ -1,0 +1,10 @@
+Data
+Pipfile
+**/wandb
+**/trash
+**/.ipynb_checkpoints
+**/__pycache__
+v2/agent1.py
+**/logs
+v2/saved
+

@@ -1,8 +1,5 @@
-import logging
-
 from tianshou.data import Batch
 from tianshou.trainer.offpolicy import *
-import torch
 from transformers.models.vit.modeling_vit import *
 from tianshou.policy import DQNPolicy
 
