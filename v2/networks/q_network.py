@@ -11,28 +11,12 @@ else:
     device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
 
-class Q_network(nn.Module):
-    def __init__(self, action_count, *args, **kwargs):
+class ViTTrailEncoder(nn.Module):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
         self.vit = ViTModel.from_pretrained('facebook/dino-vits8', use_mask_token=True,
                                             proxies={'http': '127.0.0.1:10809', 'https': '127.0.0.1:10809'}).to(device)
         self.vit_patch_size = self.vit.config.patch_size
-
-        state_shape = 384
-        action_shape = action_count
-        self.dueling_head = ts.utils.net.common.Net(state_shape, action_shape, hidden_sizes=[512, 512], dueling_param=(
-            {
-                "hidden_sizes": [512],
-            },
-            {
-                "hidden_sizes": [512],
-            }
-        ), device=device)
-
-        for param in self.vit.parameters():
-            param.requires_grad = False
-
 
     def forward(self, obs, **kwargs):
         history = obs['history']
@@ -54,6 +38,33 @@ class Q_network(nn.Module):
         curr_enc = torch.gather(lhs, 1, indices.to(device))
         # curr_enc = lhs[torch.arange(lhs.shape[0]), curr_index, :]
 
+        return curr_enc
+
+
+
+class Q_network(nn.Module):
+    def __init__(self, action_count, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.vit_trail_encoder = ViTTrailEncoder()
+
+        state_shape = 384
+        action_shape = action_count
+        self.dueling_head = ts.utils.net.common.Net(state_shape, action_shape, hidden_sizes=[512, 512], dueling_param=(
+            {
+                "hidden_sizes": [512],
+            },
+            {
+                "hidden_sizes": [512],
+            }
+        ), device=device)
+
+        for param in self.vit_trail_encoder.parameters():
+            param.requires_grad = False
+
+
+    def forward(self, obs, **kwargs):
+        curr_enc = self.vit_trail_encoder(obs, **kwargs)
         duel_out = self.dueling_head(curr_enc)
         # print(f"{curr_enc[:, :4]=} \n {duel_out=}")
         return duel_out
