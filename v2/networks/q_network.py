@@ -17,8 +17,9 @@ class ViTTrailEncoder(nn.Module):
         self.vit = ViTModel.from_pretrained('facebook/dino-vits8', use_mask_token=True,
                                             proxies={'http': '127.0.0.1:10809', 'https': '127.0.0.1:10809'}).to(device)
         self.vit_patch_size = self.vit.config.patch_size
+        self.output_dim = self.vit.config.hidden_size
 
-    def forward(self, obs, **kwargs):
+    def forward(self, obs, state=-1, **kwargs):
         history = obs['history']
 
         bool_masked_pos = history.pos_mask[:, ::self.vit_patch_size, ::self.vit_patch_size].flatten(start_dim=1)
@@ -38,7 +39,10 @@ class ViTTrailEncoder(nn.Module):
         curr_enc = torch.gather(lhs, 1, indices.to(device))
         # curr_enc = lhs[torch.arange(lhs.shape[0]), curr_index, :]
 
-        return curr_enc
+        if state is None:
+            return curr_enc, None
+        else:
+            return curr_enc
 
 
 
