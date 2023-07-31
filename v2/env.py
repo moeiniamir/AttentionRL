@@ -9,11 +9,13 @@ from gymnasium import spaces
 import numpy as np
 import os
 import einops
+from abc import ABC, abstractmethod
 
 if os.environ['USER'] == 'server':
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 else:
     device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+
 
 class Actions(Enum):
     UP = 0
@@ -22,7 +24,18 @@ class Actions(Enum):
     LEFT = 3
     # STAY = 4
 
-class History:
+
+class AbstractHistory(ABC):
+    @abstractmethod
+    def append(self, patch, row, col):
+        pass
+
+    @abstractmethod
+    def get_history_dict(self):
+        pass
+
+
+class History(AbstractHistory):
     def __init__(self, patch_size, max_row=None, max_col=None):
         self.patch_size = patch_size
         if max_row is None:
@@ -32,7 +45,8 @@ class History:
         else:
             self._min_row, self._min_col, self._max_row, self._max_col = 0, 0, max_row, max_col
             self.pos_mask = torch.ones(((max_row + 1) * patch_size[0], (max_col + 1) * patch_size[1]), dtype=torch.bool)
-            self.history = torch.zeros((3, (max_row + 1) * patch_size[0], (max_col + 1) * patch_size[1]), dtype=torch.uint8)
+            self.history = torch.zeros((3, (max_row + 1) * patch_size[0], (max_col + 1) * patch_size[1]),
+                                       dtype=torch.uint8)
 
         self.curr_rel_row, self.curr_rel_col = None, None
 
@@ -84,23 +98,108 @@ class History:
             left = self.patch_size[1] * (col - self._min_col)
             right = left + self.patch_size[1]
 
-            # print(f"{self._min_row=}, {self._min_col=}, {self._max_row=}, {self._max_col=} {top=}, {bottom=}, {left=}, {right=}")
             self.history[:, top:bottom, left:right] = patch
             self.pos_mask[top:bottom, left:right] = 0
         self.curr_rel_col = col - self._min_col
         self.curr_rel_row = row - self._min_row
 
+    def get_history_dict(self):
+        return {
+            'history': self.history,
+            'pos_mask': self.pos_mask,
+            'curr_rel_row': torch.tensor(self.curr_rel_row),
+            'curr_rel_col': torch.tensor(self.curr_rel_col),
+            'patch_size': torch.tensor(self.patch_size),
+        }
+
+
+class LimitedHistory(AbstractHistory):
+    def __init__(self, max_len, max_col, max_row, patch_size):
+        self.max_len = max_len
+        self.max_col = max_col
+        self.max_row = max_row
+        self.patch_size = patch_size
+        self.loc_to_patch = {}
+        self.loc_history = []
+
+        self.canvas = torch.zeros((3, (max_row + 3) * patch_size[0], (max_col + 3) * patch_size[1]), dtype=torch.uint8)
+        self.kmask = torch.ones((max_row + 3) * patch_size[0], (max_col + 3) * patch_size[1], dtype=torch.bool)
+        self.pmask = torch.ones((max_row + 3) * patch_size[0], (max_col + 3) * patch_size[1], dtype=torch.bool)
+        self.indices = None
+
+    def append(self, patch, row, col):
+        # fix the row and col to be relative to the canvas
+        row += 1
+        col += 1
+        # set the indices (current, top, right, bottom, left)
+        self.indices = [(row, col), (row - 1, col), (row, col + 1), (row + 1, col), (row, col - 1)]
+        self.loc_history.append((row, col))
+        self.loc_to_patch[(row, col)] = patch
+
+    def _set_patch(self, p, on, row, col):
+        top = self.patch_size[0] * row
+        bottom = top + self.patch_size[0]
+        left = self.patch_size[1] * col
+        right = left + self.patch_size[1]
+        on[..., top:bottom, left:right] = p
+
+    def _fill_canvas(self):
+        self.kmask.fill_(0)
+        self.pmask.fill_(0)
+        iterator = iter(self.loc_history[::-1])
+        # set the current and adjacent patches
+        self._set_patch(self.loc_to_patch[next(iterator)], self.canvas, *self.indices[0])
+        self._set_patch(1, self.kmask, *self.indices[0])  # todo why wasn't here at first?
+        self._set_patch(1, self.kmask, *self.indices[1])
+        self._set_patch(1, self.kmask, *self.indices[2])
+        self._set_patch(1, self.kmask, *self.indices[3])
+        self._set_patch(1, self.kmask, *self.indices[4])
+        kept_indices = [self.indices[0], self.indices[1], self.indices[2], self.indices[3],
+                        self.indices[4]]
+        curr_len = 5
+        # set  additional patches till max_len
+        while curr_len < self.max_len:
+            try:
+                loc = next(iterator)
+            except StopIteration:
+                break
+            if loc in kept_indices:
+                continue
+            self._set_patch(self.loc_to_patch[loc], self.canvas, *loc)
+            self._set_patch(1, self.kmask, *loc)
+            kept_indices.append(loc)
+            curr_len += 1
+        # set the patched patches
+        for loc in self.indices[1:]:
+            if loc not in kept_indices:
+                self._set_patch(1, self.pmask, *loc)
+
+    def get_history_dict(self):
+        self._fill_canvas()
+        return {
+            'history': self.canvas,
+            'kmask': self.kmask,
+            'pmask': self.pmask,
+            'curdl_indices': torch.tensor(self.indices),
+            'patch_size': torch.tensor(self.patch_size),  # for compatibility with the other history
+            'pos_mask': ~self.kmask,  # for compatibility with the other history
+            'curr_rel_row': torch.tensor(self.indices[0][0]),  # for compatibility with the other history
+            'curr_rel_col': torch.tensor(self.indices[0][1]),  # for compatibility with the other history
+        }
+
+
 class Environment(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 4}
 
-    def __init__(self, dataset, patch_size=(64, 64)):
+    def __init__(self, dataset, patch_size=(64, 64), max_len=None):
         self.dataloader = D.DataLoader(dataset, batch_size=1, shuffle=True)
         self.iterator = iter(self.dataloader)
         self.patch_size = patch_size
+        self.max_len = max_len
 
-        self.img_emtpy_patch = torch.zeros((patch_size[0]//2, patch_size[1]//2))
+        self.img_emtpy_patch = torch.zeros((patch_size[0] // 2, patch_size[1] // 2))
         self.img_emtpy_patch[::2, ::2] = 1
-        self.seg_empty_patch = torch.zeros((patch_size[0]//2, patch_size[1]//2))
+        self.seg_empty_patch = torch.zeros((patch_size[0] // 2, patch_size[1] // 2))
 
         self.observation_space = spaces.Dict({
             'center': spaces.Box(low=0, high=255, shape=(3, self.patch_size[0], self.patch_size[1]), dtype=np.uint8),
@@ -132,28 +231,21 @@ class Environment(gym.Env):
                            :initial_width // self.patch_size[1] * self.patch_size[1]]
 
         # add empty patch to all 4 edges of image and seg
-        # here's an example:
-        # empty_patch = torch.zeros(8, 8)
-        # empty_patch[::2, ::2] = 1
-        # image = torch.rand(3, 64, 64)
-        # repeated_empty_patch = empty_patch.repeat(image.shape[0], 1, image.shape[2] // empty_patch.shape[1])
-        # image = torch.cat([repeated_empty_patch, image, repeated_empty_patch], dim=1)
-        # repeated_empty_patch = empty_patch.repeat(image.shape[0], image.shape[1] // empty_patch.shape[0], 1)
-        # image = torch.cat([repeated_empty_patch, image, repeated_empty_patch], dim=2)
         repeated_empty_patch = self.img_emtpy_patch.repeat(self.current_image.shape[0], 1,
                                                            self.current_image.shape[2] // self.img_emtpy_patch.shape[1])
         self.current_image = torch.cat([repeated_empty_patch, self.current_image, repeated_empty_patch], dim=1)
         repeated_empty_patch = self.img_emtpy_patch.repeat(self.current_image.shape[0],
-                                                           self.current_image.shape[1] // self.img_emtpy_patch.shape[0], 1)
+                                                           self.current_image.shape[1] // self.img_emtpy_patch.shape[0],
+                                                           1)
         self.current_image = torch.cat([repeated_empty_patch, self.current_image, repeated_empty_patch], dim=2)
 
         repeated_empty_patch = self.seg_empty_patch.repeat(self.current_seg.shape[0], 1,
                                                            self.current_seg.shape[2] // self.seg_empty_patch.shape[1])
         self.current_seg = torch.cat([repeated_empty_patch, self.current_seg, repeated_empty_patch], dim=1)
         repeated_empty_patch = self.seg_empty_patch.repeat(self.current_seg.shape[0],
-                                                           self.current_seg.shape[1] // self.seg_empty_patch.shape[0], 1)
+                                                           self.current_seg.shape[1] // self.seg_empty_patch.shape[0],
+                                                           1)
         self.current_seg = torch.cat([repeated_empty_patch, self.current_seg, repeated_empty_patch], dim=2)
-
 
         self.image_id = str(self.image_id.item())
         _, self.height, self.width = self.current_image.shape
@@ -164,9 +256,11 @@ class Environment(gym.Env):
 
         # self.seen_patches = torch.zeros((self.max_row + 1, self.max_col + 1))
         self.seen_patches = torch.full((self.max_row + 1, self.max_col + 1), -0.5)
-        self.seen_masks = torch.zeros(self.current_seg.shape[0]).to(device)
-        # self.history = History(self.patch_size)
-        self.history = History(self.patch_size, self.max_row, self.max_col)
+        self.seen_masks = torch.zeros(self.current_seg.shape[0])
+        if self.max_len is None:
+            self.history = History(self.patch_size, self.max_row, self.max_col)
+        else:
+            self.history = LimitedHistory(self.max_len, self.max_col, self.max_row, self.patch_size)
 
         return self._get_obs(), {}
 
@@ -175,25 +269,16 @@ class Environment(gym.Env):
         start_col, end_col = self.col * self.patch_size[1], (self.col + 1) * self.patch_size[1]
         return self.current_image[:, start_row: end_row, start_col: end_col]
 
-    def _get_history(self, new_patch):
+    def _update_history(self, new_patch):
         self.history.append(new_patch, self.row, self.col)
         return self.history
 
     def _get_obs(self):
         patch = self._get_patch()
-        history = self._get_history(patch)
+        self._update_history(patch)
         return {
-            # 'center': patch,
-            # 'surrounding': self._get_surrounding(),
-            'history': {
-                'history': history.history,
-                'pos_mask': history.pos_mask,
-                'curr_rel_row': torch.tensor(history.curr_rel_row),
-                'curr_rel_col': torch.tensor(history.curr_rel_col),
-                'patch_size': torch.tensor(history.patch_size),
-            }
+            'history': self.history.get_history_dict(),
         }
-
 
     def _reward_seg(self):
         start_row, end_row = self.row * self.patch_size[0], (self.row + 1) * self.patch_size[0]
