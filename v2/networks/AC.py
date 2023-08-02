@@ -133,15 +133,20 @@ class Actor(nn.Module):
     def __init__(self, basenet):
         super().__init__()
         self.basenet = basenet
-        self.curr_linear = nn.Linear(basenet.vit.config.hidden_size, basenet.vit.config.hidden_size)
-        self.adj_linear = nn.Linear(basenet.vit.config.hidden_size, basenet.vit.config.hidden_size)
+        # self.curr_linear = nn.Linear(basenet.vit.config.hidden_size, basenet.vit.config.hidden_size)
+        self.curr_linear = nn.Linear(basenet.vit.config.hidden_size, 1024)
+        # self.adj_linear = nn.Linear(basenet.vit.config.hidden_size, basenet.vit.config.hidden_size)
+        self.adj_linear = nn.Linear(basenet.vit.config.hidden_size, 1024)
+        self.t = nn.Parameter(torch.tensor(10, dtype=torch.float32))
+        self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, obs, **kwargs):
         curr, adj = self.basenet(obs, **kwargs)
         curr = self.curr_linear(curr)
         adj = self.adj_linear(adj)
         pi = einops.einsum(curr, adj, 'i k, i j k -> i j')
-        return pi, None
+        probs = self.softmax(pi / self.t)
+        return probs, None
 
 
 class Critic(nn.Module):
