@@ -211,6 +211,7 @@ class Environment(gym.Env):
         self.reset()
 
     def reset(self, **kwargs):
+        print('reset')
         try:
             # Samples the batch
             self.current_image, self.current_seg, self.image_id = next(self.iterator)

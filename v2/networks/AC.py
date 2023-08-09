@@ -95,14 +95,16 @@ class BaseNetwork(nn.Module):
     def __init__(self, patch_size, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.vit = PathViTModel.from_pretrained('facebook/dino-vits8', use_mask_token=True,
-                                                proxies={'http': '127.0.0.1:10809', 'https': '127.0.0.1:10809'}).to(
-            device)
+        # self.vit = PathViTModel.from_pretrained('facebook/dino-vits8', use_mask_token=True,
+        #                                         proxies={'http': '127.0.0.1:10809', 'https': '127.0.0.1:10809'}).to(device)
+        self.vit = PathViTModel.from_pretrained('facebook/dino-vits8', use_mask_token=True).to(device)
+
         self.vit_patch_size = self.vit.config.patch_size
         self.patch_size = patch_size
         self.patch_h, self.patch_w = self.patch_size[0] // self.vit_patch_size, self.patch_size[
             1] // self.vit_patch_size
         self.layer_norm = nn.LayerNorm([self.vit.config.hidden_size], eps=self.vit.config.layer_norm_eps)
+        self.output_dim = self.vit.config.hidden_size
 
         for param in self.vit.parameters():
             param.requires_grad = False
@@ -113,7 +115,7 @@ class BaseNetwork(nn.Module):
         curr_index = i * w + j + (self.patch_h // 2) * w + (self.patch_w // 2)
         return curr_index
 
-    def forward(self, obs, **kwargs):
+    def forward(self, obs, state=-1, **kwargs):
         history = obs['history']
         indices = history['curdl_indices']
         kmask = history['kmask'][:, ::self.vit_patch_size, ::self.vit_patch_size].flatten(1)
@@ -126,7 +128,10 @@ class BaseNetwork(nn.Module):
             interpolate_pos_encoding=True)
         lhs = out.last_hidden_state
         lhs = self.layer_norm(lhs)
-        return lhs[:, 0], lhs[:, 1:5]
+        if state is None: # means it's being used as base for ts Actor/Critic
+            return lhs[:, 0], None
+        else:
+            return lhs[:, 0], lhs[:, 1:5]
 
 
 class Actor(nn.Module):
@@ -137,16 +142,17 @@ class Actor(nn.Module):
         self.curr_linear = nn.Linear(basenet.vit.config.hidden_size, 1024)
         # self.adj_linear = nn.Linear(basenet.vit.config.hidden_size, basenet.vit.config.hidden_size)
         self.adj_linear = nn.Linear(basenet.vit.config.hidden_size, 1024)
-        self.t = nn.Parameter(torch.tensor(10, dtype=torch.float32))
-        self.softmax = nn.Softmax(dim=-1)
+        self.t = nn.Parameter(torch.tensor(100, dtype=torch.float32))
 
     def forward(self, obs, **kwargs):
         curr, adj = self.basenet(obs, **kwargs)
         curr = self.curr_linear(curr)
         adj = self.adj_linear(adj)
         pi = einops.einsum(curr, adj, 'i k, i j k -> i j')
-        probs = self.softmax(pi / self.t)
-        return probs, None
+        pi = pi / self.t
+        # pi = pi-pi.max(1, keepdim=True).values
+        # print(f"{curr[0]=} {adj[0]=} {pi[0]=} {probs[0]=} {self.t=}")
+        return pi, None
 
 
 class Critic(nn.Module):
@@ -160,4 +166,5 @@ class Critic(nn.Module):
         curr, adj = self.basenet(obs, **kwargs)
         ca_out = self.cross_attention(curr.unsqueeze(1), adj).squeeze()
         value = self.linear(ca_out)
+        # print(f"{value=}")
         return value

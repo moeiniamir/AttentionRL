@@ -14,8 +14,10 @@ else:
 class ViTTrailEncoder(nn.Module):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.vit = ViTModel.from_pretrained('facebook/dino-vits8', use_mask_token=True,
-                                            proxies={'http': '127.0.0.1:10809', 'https': '127.0.0.1:10809'}).to(device)
+        # self.vit = ViTModel.from_pretrained('facebook/dino-vits8', use_mask_token=True,
+        #                                     proxies={'http': '127.0.0.1:10809', 'https': '127.0.0.1:10809'}).to(device)
+        self.vit = ViTModel.from_pretrained('facebook/dino-vits8', use_mask_token=True).to(device)
+
         self.vit_patch_size = self.vit.config.patch_size
         self.output_dim = self.vit.config.hidden_size
 
