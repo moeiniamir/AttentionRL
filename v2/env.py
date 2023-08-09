@@ -46,7 +46,7 @@ class History(AbstractHistory):
             self._min_row, self._min_col, self._max_row, self._max_col = 0, 0, max_row, max_col
             self.pos_mask = torch.ones(((max_row + 1) * patch_size[0], (max_col + 1) * patch_size[1]), dtype=torch.bool)
             self.history = torch.zeros((3, (max_row + 1) * patch_size[0], (max_col + 1) * patch_size[1]),
-                                       dtype=torch.uint8)
+                                       dtype=torch.float16)
 
         self.curr_rel_row, self.curr_rel_col = None, None
 
@@ -122,7 +122,7 @@ class LimitedHistory(AbstractHistory):
         self.loc_to_patch = {}
         self.loc_history = []
 
-        self.canvas = torch.zeros((3, (max_row + 3) * patch_size[0], (max_col + 3) * patch_size[1]), dtype=torch.uint8)
+        self.canvas = torch.zeros((3, (max_row + 3) * patch_size[0], (max_col + 3) * patch_size[1]), dtype=torch.float16)
         self.kmask = torch.ones((max_row + 3) * patch_size[0], (max_col + 3) * patch_size[1], dtype=torch.bool)
         self.pmask = torch.ones((max_row + 3) * patch_size[0], (max_col + 3) * patch_size[1], dtype=torch.bool)
         self.indices = None
@@ -143,9 +143,11 @@ class LimitedHistory(AbstractHistory):
         right = left + self.patch_size[1]
         on[..., top:bottom, left:right] = p
 
+
     def _fill_canvas(self):
         self.kmask.fill_(0)
         self.pmask.fill_(0)
+        self.canvas.fill_(0) # todo why wasn't here at first?
         iterator = iter(self.loc_history[::-1])
         # set the current and adjacent patches
         self._set_patch(self.loc_to_patch[next(iterator)], self.canvas, *self.indices[0])
@@ -163,12 +165,11 @@ class LimitedHistory(AbstractHistory):
                 loc = next(iterator)
             except StopIteration:
                 break
-            if loc in kept_indices:
-                continue
+            if loc not in kept_indices:
+                kept_indices.append(loc)
+                curr_len += 1
             self._set_patch(self.loc_to_patch[loc], self.canvas, *loc)
             self._set_patch(1, self.kmask, *loc)
-            kept_indices.append(loc)
-            curr_len += 1
         # set the patched patches
         for loc in self.indices[1:]:
             if loc not in kept_indices:
@@ -192,7 +193,6 @@ class Environment(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 4}
 
     def __init__(self, dataset, patch_size=(64, 64), max_len=None):
-        print('inited env')
         self.dataloader = D.DataLoader(dataset, batch_size=1, shuffle=True)
         self.iterator = iter(self.dataloader)
         self.patch_size = patch_size
@@ -203,16 +203,14 @@ class Environment(gym.Env):
         self.seg_empty_patch = torch.zeros((patch_size[0] // 2, patch_size[1] // 2))
 
         self.observation_space = spaces.Dict({
-            'center': spaces.Box(low=0, high=255, shape=(3, self.patch_size[0], self.patch_size[1]), dtype=np.uint8),
+            'center': spaces.Box(low=0, high=255, shape=(3, self.patch_size[0], self.patch_size[1]), dtype=np.float16),
         })
         self.action_space = spaces.Discrete(len(Actions))
 
         self.im = None
 
-        self.reset()
 
     def reset(self, **kwargs):
-        print('reset')
         try:
             # Samples the batch
             self.current_image, self.current_seg, self.image_id = next(self.iterator)

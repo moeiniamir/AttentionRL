@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import os
@@ -142,7 +143,8 @@ class Actor(nn.Module):
         self.curr_linear = nn.Linear(basenet.vit.config.hidden_size, 1024)
         # self.adj_linear = nn.Linear(basenet.vit.config.hidden_size, basenet.vit.config.hidden_size)
         self.adj_linear = nn.Linear(basenet.vit.config.hidden_size, 1024)
-        self.t = nn.Parameter(torch.tensor(100, dtype=torch.float32))
+        # self.t = nn.Parameter(torch.tensor(100, dtype=torch.float32))
+        self.t = np.sqrt(1024)
 
     def forward(self, obs, **kwargs):
         curr, adj = self.basenet(obs, **kwargs)
@@ -150,7 +152,6 @@ class Actor(nn.Module):
         adj = self.adj_linear(adj)
         pi = einops.einsum(curr, adj, 'i k, i j k -> i j')
         pi = pi / self.t
-        # pi = pi-pi.max(1, keepdim=True).values
         # print(f"{curr[0]=} {adj[0]=} {pi[0]=} {probs[0]=} {self.t=}")
         return pi, None
 
