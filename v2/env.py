@@ -192,6 +192,7 @@ class Environment(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 4}
 
     def __init__(self, dataset, patch_size=(64, 64), max_len=None):
+        print('inited env')
         self.dataloader = D.DataLoader(dataset, batch_size=1, shuffle=True)
         self.iterator = iter(self.dataloader)
         self.patch_size = patch_size
