@@ -207,7 +207,6 @@ class Environment(gym.Env):
         })
         self.action_space = spaces.Discrete(len(Actions))
 
-        self.im = None
 
 
     def reset(self, **kwargs):
@@ -261,6 +260,9 @@ class Environment(gym.Env):
             self.history = History(self.patch_size, self.max_row, self.max_col)
         else:
             self.history = LimitedHistory(self.max_len, self.max_col, self.max_row, self.patch_size)
+
+        self.im = None
+        self.render_mask = torch.ones(self.current_image.shape[1:])
 
         return self._get_obs(), {}
 
@@ -327,19 +329,27 @@ class Environment(gym.Env):
         return obs, reward, done, truncated, info
 
     def _get_render_image(self):
-        start_row, end_row = self.row * self.patch_size[0], (self.row + 1) * self.patch_size[0]
-        start_col, end_col = self.col * self.patch_size[1], (self.col + 1) * self.patch_size[1]
-        image = einops.rearrange(self.trail_image, 'c h w -> h w c')
-        image[start_row: end_row, start_col: end_col] = 0.8 * image[start_row: end_row, start_col: end_col]
+        # row = self.row
+        # col = self.col
+        # image = self.current_image
+
+        history = self.history.get_history_dict()
+        row = history['curr_rel_row']
+        col = history['curr_rel_col']
+        image = history['history']
+
+        start_row, end_row = row * self.patch_size[0], (self.row + 1) * self.patch_size[0]
+        start_col, end_col = col * self.patch_size[1], (self.col + 1) * self.patch_size[1]
+        self.render_mask[start_row: end_row, start_col: end_col] = 0.8 * self.render_mask[start_row: end_row, start_col: end_col]
+        image = einops.rearrange(image * self.render_mask, 'c h w -> h w c')
         return image
 
     def render(self):
         if self.im is None:
-            self.trail_image = self.current_image.clone()
             self.im = plt.imshow(self._get_render_image())
             display.display(plt.gcf())
         else:
             display.clear_output(wait=True)
             self.im.set_data(self._get_render_image())
-            self.im.axes.add_image(self.im)
+            # self.im.axes.add_image(self.im)
             display.display(plt.gcf())
