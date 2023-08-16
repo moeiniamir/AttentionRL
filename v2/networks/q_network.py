@@ -21,6 +21,9 @@ class ViTTrailEncoder(nn.Module):
         self.vit_patch_size = self.vit.config.patch_size
         self.output_dim = self.vit.config.hidden_size
 
+        for param in self.vit.parameters():
+            param.requires_grad = False
+
     def forward(self, obs, state=-1, **kwargs):
         history = obs['history']
 
@@ -62,9 +65,6 @@ class Q_network(nn.Module):
                 "hidden_sizes": [512],
             }
         ), device=device)
-
-        for param in self.vit_trail_encoder.parameters():
-            param.requires_grad = False
 
 
     def forward(self, obs, **kwargs):
