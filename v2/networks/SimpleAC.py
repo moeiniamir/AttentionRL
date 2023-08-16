@@ -56,8 +56,8 @@ class Actor(nn.Module):
             device=self.device,
             activation=nn.Tanh
         )
-        with torch.no_grad():
-            self.last.model[-1].weight /= 100
+        # with torch.no_grad():
+        #     self.last.model[-1].weight /= 100
         self.softmax_output = softmax_output
 
     def forward(
