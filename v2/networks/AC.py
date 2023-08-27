@@ -42,6 +42,8 @@ class PathViTEmbedding(ViTEmbeddings):
         batch_size, num_channels, height, width = pixel_values.shape
         embeddings = self.patch_embeddings(pixel_values,
                                            interpolate_pos_encoding=interpolate_pos_encoding)  # b x seq x h
+        # assert than no nan is present in the embeddings
+        assert not torch.isnan(embeddings).any(), "embeddings has NaN values"
 
         # unpack the fake bool_masked_pos
         kmask = bool_masked_pos['kmask']  # b x seq
@@ -55,6 +57,7 @@ class PathViTEmbedding(ViTEmbeddings):
         mask = pmask.unsqueeze(-1).type_as(mask_tokens)
         embeddings = embeddings * (1.0 - mask) + mask_tokens * mask
 
+
         # add the [CLS] token to the embedded patch tokens
         cls_tokens = self.cls_token.expand(batch_size, -1, -1)
         embeddings = torch.cat((cls_tokens, embeddings), dim=1)  # b x seq+1 x h
@@ -65,9 +68,9 @@ class PathViTEmbedding(ViTEmbeddings):
         else:
             embeddings = embeddings + self.position_embeddings
 
-        # swap needed positions #todo use numba
         indices += 1  # to account for the [CLS] token
         kmask = nn.functional.pad(kmask, (1, 0), value=1)  # to account for the [CLS] token # b x seq+1
+        # swap needed positions #todo use numba
         arange_arr = torch.arange(embeddings.shape[1], device=indices.device).repeat((embeddings.shape[0], 1))
         bool_mask_remaining = torch.cat(
             [~torch.isin(arr, indicesr).unsqueeze(0) for arr, indicesr in zip(arange_arr, indices)], dim=0
@@ -77,7 +80,6 @@ class PathViTEmbedding(ViTEmbeddings):
         embeddings = embeddings.gather(1, einops.repeat(new_arr, 'b seq -> b seq h', h=embeddings.shape[2]))
         kmask = kmask.gather(1, new_arr)
 
-
         # remove ~kmasked positions, pad to max seq len and stack to batch again # todo use numba
         max_len = kmask.sum(dim=1).max()
         # temp_alloc = einops.repeat(self.pad_token, 'h -> b s h', b=embeddings.shape[0], s=max_len).clone()
@@ -86,8 +88,9 @@ class PathViTEmbedding(ViTEmbeddings):
             temp_alloc[i, :kmask[i].sum()] = embeddings[i, kmask[i]]
         embeddings = temp_alloc
 
-
         embeddings = self.dropout(embeddings)
+        # assert than no nan is present in the embeddings
+        assert not torch.isnan(embeddings).any(), "embeddings has NaN values"
 
         return embeddings
 
@@ -104,11 +107,13 @@ class BaseNetwork(nn.Module):
         self.patch_size = patch_size
         self.patch_h, self.patch_w = self.patch_size[0] // self.vit_patch_size, self.patch_size[
             1] // self.vit_patch_size
-        self.layer_norm = nn.LayerNorm([self.vit.config.hidden_size], eps=self.vit.config.layer_norm_eps)
+        # self.layer_norm = nn.LayerNorm([self.vit.config.hidden_size], eps=self.vit.config.layer_norm_eps)
         self.output_dim = self.vit.config.hidden_size
 
         for param in self.vit.parameters():
             param.requires_grad = False
+        # self.vit.embeddings.pad_token.requires_grad = True
+        # self.vit.embeddings.mask_token.requires_grad = True
 
     def build_indices(self, row, col, canvas):
         w = canvas.shape[3] // self.vit_patch_size
@@ -128,8 +133,8 @@ class BaseNetwork(nn.Module):
             bool_masked_pos={'kmask': kmask.to(device), 'pmask': pmask.to(device), 'indices': indices.to(device)},
             interpolate_pos_encoding=True)
         lhs = out.last_hidden_state
-        lhs = self.layer_norm(lhs)
-        if state is None: # means it's being used as base for ts Actor/Critic
+        # lhs = self.layer_norm(lhs) # it's already layernormed in vit. god, I'm stupid
+        if state is None:  # means it's being used as base for ts Actor/Critic
             return lhs[:, 0], None
         else:
             return lhs[:, 0], lhs[:, 1:5]
@@ -152,7 +157,6 @@ class Actor(nn.Module):
         adj = self.adj_linear(adj)
         pi = einops.einsum(curr, adj, 'i k, i j k -> i j')
         pi = pi / self.t
-        # print(f"{curr[0]=} {adj[0]=} {pi[0]=} {probs[0]=} {self.t=}")
         return pi, None
 
 
@@ -167,5 +171,4 @@ class Critic(nn.Module):
         curr, adj = self.basenet(obs, **kwargs)
         ca_out = self.cross_attention(curr.unsqueeze(1), adj).squeeze()
         value = self.linear(ca_out)
-        # print(f"{value=}")
         return value

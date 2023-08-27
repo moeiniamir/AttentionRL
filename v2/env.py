@@ -122,7 +122,8 @@ class LimitedHistory(AbstractHistory):
         self.loc_to_patch = {}
         self.loc_history = []
 
-        self.canvas = torch.zeros((3, (max_row + 3) * patch_size[0], (max_col + 3) * patch_size[1]), dtype=torch.float16)
+        self.canvas = torch.zeros((3, (max_row + 3) * patch_size[0], (max_col + 3) * patch_size[1]),
+                                  dtype=torch.float16)
         self.kmask = torch.ones((max_row + 3) * patch_size[0], (max_col + 3) * patch_size[1], dtype=torch.bool)
         self.pmask = torch.ones((max_row + 3) * patch_size[0], (max_col + 3) * patch_size[1], dtype=torch.bool)
         self.indices = None
@@ -143,21 +144,20 @@ class LimitedHistory(AbstractHistory):
         right = left + self.patch_size[1]
         on[..., top:bottom, left:right] = p
 
-
     def _fill_canvas(self):
         self.kmask.fill_(0)
         self.pmask.fill_(0)
-        self.canvas.fill_(0) # todo why wasn't here at first?
+        self.canvas.fill_(0)  # todo why wasn't here at first?
         iterator = iter(self.loc_history[::-1])
+        seen_indices = [self.indices[0]]
+        adj_indices = [self.indices[1], self.indices[2], self.indices[3], self.indices[4]]
         # set the current and adjacent patches
-        self._set_patch(self.loc_to_patch[next(iterator)], self.canvas, *self.indices[0])
-        self._set_patch(1, self.kmask, *self.indices[0])  # todo why wasn't here at first?
-        self._set_patch(1, self.kmask, *self.indices[1])
-        self._set_patch(1, self.kmask, *self.indices[2])
-        self._set_patch(1, self.kmask, *self.indices[3])
-        self._set_patch(1, self.kmask, *self.indices[4])
-        kept_indices = [self.indices[0], self.indices[1], self.indices[2], self.indices[3],
-                        self.indices[4]]
+        self._set_patch(self.loc_to_patch[next(iterator)], self.canvas, *seen_indices[0])
+        self._set_patch(1, self.kmask, *seen_indices[0])
+        self._set_patch(1, self.kmask, *adj_indices[0])
+        self._set_patch(1, self.kmask, *adj_indices[1])
+        self._set_patch(1, self.kmask, *adj_indices[2])
+        self._set_patch(1, self.kmask, *adj_indices[3])
         curr_len = 5
         # set  additional patches till max_len
         while curr_len < self.max_len:
@@ -165,14 +165,15 @@ class LimitedHistory(AbstractHistory):
                 loc = next(iterator)
             except StopIteration:
                 break
-            if loc not in kept_indices:
-                kept_indices.append(loc)
-                curr_len += 1
+            if loc not in seen_indices:
+                seen_indices.append(loc)
+                if loc not in adj_indices:
+                    curr_len += 1
             self._set_patch(self.loc_to_patch[loc], self.canvas, *loc)
             self._set_patch(1, self.kmask, *loc)
         # set the patched patches
-        for loc in self.indices[1:]:
-            if loc not in kept_indices:
+        for loc in adj_indices:
+            if loc not in seen_indices:
                 self._set_patch(1, self.pmask, *loc)
 
     def get_history_dict(self):
@@ -206,8 +207,6 @@ class Environment(gym.Env):
             'center': spaces.Box(low=0, high=255, shape=(3, self.patch_size[0], self.patch_size[1]), dtype=np.float16),
         })
         self.action_space = spaces.Discrete(len(Actions))
-
-
 
     def reset(self, **kwargs):
         try:
@@ -262,7 +261,7 @@ class Environment(gym.Env):
             self.history = LimitedHistory(self.max_len, self.max_col, self.max_row, self.patch_size)
 
         self.im = None
-        self.render_mask = torch.ones(self.current_image.shape[1:])
+        self.render_mask = None
 
         return self._get_obs(), {}
 
@@ -338,10 +337,22 @@ class Environment(gym.Env):
         col = history['curr_rel_col']
         image = history['history']
 
-        start_row, end_row = row * self.patch_size[0], (self.row + 1) * self.patch_size[0]
-        start_col, end_col = col * self.patch_size[1], (self.col + 1) * self.patch_size[1]
-        self.render_mask[start_row: end_row, start_col: end_col] = 0.8 * self.render_mask[start_row: end_row, start_col: end_col]
-        image = einops.rearrange(image * self.render_mask, 'c h w -> h w c')
+        if self.render_mask is None:
+            self.render_mask = torch.ones(image.shape[1:])
+
+        if 'kmask' in history and 'pmask' in history:
+            pmask = history['pmask']
+            kmask = history['kmask']
+            image[0] += (~kmask) * 0.5
+            image[2] += pmask * 0.5
+
+        start_row, end_row = row * self.patch_size[0], (row + 1) * self.patch_size[0]
+        start_col, end_col = col * self.patch_size[1], (col + 1) * self.patch_size[1]
+        self.render_mask[start_row: end_row, start_col: end_col] = 0.8 * self.render_mask[start_row: end_row,
+                                                                         start_col: end_col]
+        image = image * self.render_mask
+
+        image = einops.rearrange(image, 'c h w -> h w c')
         return image
 
     def render(self):
