@@ -5,10 +5,6 @@ import tianshou as ts
 import einops
 from transformers import ViTImageProcessor, ViTModel
 
-if os.environ['USER'] == 'server':
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-else:
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
 
 class ViTTrailEncoder(nn.Module):
@@ -16,7 +12,7 @@ class ViTTrailEncoder(nn.Module):
         super().__init__(*args, **kwargs)
         # self.vit = ViTModel.from_pretrained('facebook/dino-vits8', use_mask_token=True,
         #                                     proxies={'http': '127.0.0.1:10809', 'https': '127.0.0.1:10809'}).to(device)
-        self.vit = ViTModel.from_pretrained('facebook/dino-vits8', use_mask_token=True).to(device)
+        self.vit = ViTModel.from_pretrained('facebook/dino-vits8', use_mask_token=True)
 
         self.vit_patch_size = self.vit.config.patch_size
         self.output_dim = self.vit.config.hidden_size
@@ -47,27 +43,3 @@ class ViTTrailEncoder(nn.Module):
         else:
             return curr_enc
 
-
-
-class Q_network(nn.Module):
-    def __init__(self, action_count, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.vit_trail_encoder = ViTTrailEncoder()
-
-        state_shape = 384
-        action_shape = action_count
-        self.dueling_head = ts.utils.net.common.Net(state_shape, action_shape, hidden_sizes=[512, 512], dueling_param=(
-            {
-                "hidden_sizes": [512],
-            },
-            {
-                "hidden_sizes": [512],
-            }
-        ), device=device)
-
-
-    def forward(self, obs, **kwargs):
-        curr_enc = self.vit_trail_encoder(obs, **kwargs)
-        duel_out = self.dueling_head(curr_enc)
-        return duel_out

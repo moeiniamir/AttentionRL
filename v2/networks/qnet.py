@@ -6,10 +6,6 @@ import einops
 from transformers import ViTImageProcessor, ViTModel
 from .vit import ViTTrailEncoder
 
-if os.environ['USER'] == 'server':
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-else:
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
 class Q_network(nn.Module):
     def __init__(self, action_count, *args, **kwargs):
@@ -26,7 +22,7 @@ class Q_network(nn.Module):
             {
                 "hidden_sizes": [512],
             }
-        ), device=device)
+        ))
 
 
     def forward(self, obs, **kwargs):

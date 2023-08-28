@@ -11,10 +11,6 @@ import os
 import einops
 from abc import ABC, abstractmethod
 
-if os.environ['USER'] == 'server':
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-else:
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
 
 class Actions(Enum):

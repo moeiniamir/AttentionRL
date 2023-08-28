@@ -6,21 +6,18 @@ import tianshou as ts
 import einops
 from transformers.models.vit.modeling_vit import *
 
-if os.environ['USER'] == 'server':
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-else:
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
-
 
 class PathViTModel(ViTModel):
     def __init__(self, config: ViTConfig, add_pooling_layer: bool = True, use_mask_token: bool = False):
         super().__init__(config)
         self.config = config
 
-        self.embeddings = PathViTEmbedding(config, use_mask_token=use_mask_token)
+        self.embeddings = PathViTEmbedding(
+            config, use_mask_token=use_mask_token)
         self.encoder = ViTEncoder(config)
 
-        self.layernorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.layernorm = nn.LayerNorm(
+            config.hidden_size, eps=config.layer_norm_eps)
         self.pooler = ViTPooler(config) if add_pooling_layer else None
 
         # Initialize weights and apply final processing
@@ -57,33 +54,39 @@ class PathViTEmbedding(ViTEmbeddings):
         mask = pmask.unsqueeze(-1).type_as(mask_tokens)
         embeddings = embeddings * (1.0 - mask) + mask_tokens * mask
 
-
         # add the [CLS] token to the embedded patch tokens
         cls_tokens = self.cls_token.expand(batch_size, -1, -1)
-        embeddings = torch.cat((cls_tokens, embeddings), dim=1)  # b x seq+1 x h
+        embeddings = torch.cat((cls_tokens, embeddings),
+                               dim=1)  # b x seq+1 x h
 
         # add positional encoding to each token
         if interpolate_pos_encoding:
-            embeddings = embeddings + self.interpolate_pos_encoding(embeddings, height, width)
+            embeddings = embeddings + \
+                self.interpolate_pos_encoding(embeddings, height, width)
         else:
             embeddings = embeddings + self.position_embeddings
 
         indices += 1  # to account for the [CLS] token
-        kmask = nn.functional.pad(kmask, (1, 0), value=1)  # to account for the [CLS] token # b x seq+1
+        # to account for the [CLS] token # b x seq+1
+        kmask = nn.functional.pad(kmask, (1, 0), value=1)
         # swap needed positions #todo use numba
-        arange_arr = torch.arange(embeddings.shape[1], device=indices.device).repeat((embeddings.shape[0], 1))
+        arange_arr = torch.arange(embeddings.shape[1], device=indices.device).repeat(
+            (embeddings.shape[0], 1))
         bool_mask_remaining = torch.cat(
             [~torch.isin(arr, indicesr).unsqueeze(0) for arr, indicesr in zip(arange_arr, indices)], dim=0
         )
-        remaining_arr = arange_arr[bool_mask_remaining].reshape((embeddings.shape[0], -1))
+        remaining_arr = arange_arr[bool_mask_remaining].reshape(
+            (embeddings.shape[0], -1))
         new_arr = torch.cat([indices, remaining_arr], dim=1)
-        embeddings = embeddings.gather(1, einops.repeat(new_arr, 'b seq -> b seq h', h=embeddings.shape[2]))
+        embeddings = embeddings.gather(1, einops.repeat(
+            new_arr, 'b seq -> b seq h', h=embeddings.shape[2]))
         kmask = kmask.gather(1, new_arr)
 
         # remove ~kmasked positions, pad to max seq len and stack to batch again # todo use numba
         max_len = kmask.sum(dim=1).max()
         # temp_alloc = einops.repeat(self.pad_token, 'h -> b s h', b=embeddings.shape[0], s=max_len).clone()
-        temp_alloc = self.pad_token.expand(embeddings.shape[0], max_len, -1).clone()
+        temp_alloc = self.pad_token.expand(
+            embeddings.shape[0], max_len, -1).clone()
         for i in range(embeddings.shape[0]):
             temp_alloc[i, :kmask[i].sum()] = embeddings[i, kmask[i]]
         embeddings = temp_alloc
@@ -100,8 +103,9 @@ class BaseNetwork(nn.Module):
         super().__init__(*args, **kwargs)
 
         # self.vit = PathViTModel.from_pretrained('facebook/dino-vits8', use_mask_token=True,
-        #                                         proxies={'http': '127.0.0.1:10809', 'https': '127.0.0.1:10809'}).to(device)
-        self.vit = PathViTModel.from_pretrained('facebook/dino-vits8', use_mask_token=True).to(device)
+        #                                         proxies={'http': '127.0.0.1:10809', 'https': '127.0.0.1:10809'})
+        self.vit = PathViTModel.from_pretrained(
+            'facebook/dino-vits8', use_mask_token=True)
 
         self.vit_patch_size = self.vit.config.patch_size
         self.patch_size = patch_size
@@ -124,13 +128,17 @@ class BaseNetwork(nn.Module):
     def forward(self, obs, state=-1, **kwargs):
         history = obs['history']
         indices = history['curdl_indices']
-        kmask = history['kmask'][:, ::self.vit_patch_size, ::self.vit_patch_size].flatten(1)
-        pmask = history['pmask'][:, ::self.vit_patch_size, ::self.vit_patch_size].flatten(1)
+        kmask = history['kmask'][:, ::self.vit_patch_size,
+                                 ::self.vit_patch_size].flatten(1)
+        pmask = history['pmask'][:, ::self.vit_patch_size,
+                                 ::self.vit_patch_size].flatten(1)
         canvas = history['history']
         indices = self.build_indices(indices[..., 0], indices[..., 1], canvas)
         out = self.vit(
-            pixel_values=canvas.to(device),
-            bool_masked_pos={'kmask': kmask.to(device), 'pmask': pmask.to(device), 'indices': indices.to(device)},
+            pixel_values=canvas.to(self.vit.device),
+            bool_masked_pos={'kmask': kmask.to(self.vit.device),
+                             'pmask': pmask.to(self.vit.device),
+                             'indices': indices.to(self.vit.device)},
             interpolate_pos_encoding=True)
         lhs = out.last_hidden_state
         # lhs = self.layer_norm(lhs) # it's already layernormed in vit. god, I'm stupid
@@ -165,7 +173,8 @@ class Critic(nn.Module):
         super().__init__()
         self.basenet = basenet
         self.linear = nn.Linear(basenet.vit.config.hidden_size, 1)
-        self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(384, 4, 384, 0.1, batch_first=True), 2)
+        self.cross_attention = nn.TransformerDecoder(
+            nn.TransformerDecoderLayer(384, 4, 384, 0.1, batch_first=True), 2)
 
     def forward(self, obs, **kwargs):
         curr, adj = self.basenet(obs, **kwargs)
