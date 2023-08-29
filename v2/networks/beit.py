@@ -47,8 +47,7 @@ class BaseNetwork(nn.Module):
         out = self.vit(
             pixel_values=canvas.to(torch.float32).to(self.vit.device),
             bool_masked_pos=(~kmask).to(self.vit.device))
-        lhs = out.last_hidden_state
-        print(indices, lhs.shape)
+        lhs = out.logits
         gathered = lhs.gather(1, einops.repeat(indices, "b s -> b s h", h=lhs.shape[2]))
         if state is None:  # means it's being used as base for ts Actor/Critic
             return gathered[:, 0], None

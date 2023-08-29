@@ -51,7 +51,8 @@ class COCODataset(D.Dataset):
         file_name = image_file.split('/')[-1]
         # image_tensor = transforms.ToTensor()(image)
         image_tensor = transforms.Compose([
-            transforms.Resize((image.height // 2, image.width // 2)),
+            # transforms.Resize((image.height // 2, image.width // 2)),
+            transforms.Resize((224-3*32, 224-3*32)),
             transforms.ToTensor()
         ])(image)
 
