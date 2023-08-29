@@ -33,7 +33,8 @@ class Critic(nn.Module):
         self.basenet = basenet
         hidden_size = basenet.vit.config.hidden_size
         self.linear = nn.Linear(hidden_size, 1)
-        self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(hidden_size, 4, hidden_size, 0.1, batch_first=True), 2)
+        self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(
+            hidden_size, 4, hidden_size, 0.1, batch_first=True), 2)
 
     def forward(self, obs, **kwargs):
         curr, adj = self.basenet(obs)
