@@ -110,18 +110,16 @@ class History(AbstractHistory):
 
 
 class LimitedHistory(AbstractHistory):
-    def __init__(self, max_len, max_col, max_row, patch_size):
+    def __init__(self, max_len, width, height, patch_size):
         self.max_len = max_len
-        self.max_col = max_col
-        self.max_row = max_row
         self.patch_size = patch_size
         self.loc_to_patch = {}
         self.loc_history = []
 
-        self.canvas = torch.zeros((3, (max_row + 3) * patch_size[0], (max_col + 3) * patch_size[1]),
+        self.canvas = torch.zeros((3, height + 2 * patch_size[0], width + 2 * patch_size[1]),
                                   dtype=torch.float16)
-        self.kmask = torch.ones((max_row + 3) * patch_size[0], (max_col + 3) * patch_size[1], dtype=torch.bool)
-        self.pmask = torch.ones((max_row + 3) * patch_size[0], (max_col + 3) * patch_size[1], dtype=torch.bool)
+        self.kmask = torch.ones(height + 2 * patch_size[0], width + 2 * patch_size[1], dtype=torch.bool)
+        self.pmask = torch.ones(height + 2 * patch_size[0], width + 2 * patch_size[1], dtype=torch.bool)
         self.indices = None
 
     def append(self, patch, row, col):
@@ -254,7 +252,7 @@ class Environment(gym.Env):
         if self.max_len is None:
             self.history = History(self.patch_size, self.max_row, self.max_col)
         else:
-            self.history = LimitedHistory(self.max_len, self.max_col, self.max_row, self.patch_size)
+            self.history = LimitedHistory(self.max_len, self.width, self.height, self.patch_size)
 
         self.im = None
         self.render_mask = None
