@@ -25,7 +25,6 @@ class Actor(nn.Module):
         adj = self.layer_norm(adj)
         pi = einops.einsum(curr, adj, 'i k, i j k -> i j')
         pi = pi / self.t
-        print(pi)
         return pi, None
 
 

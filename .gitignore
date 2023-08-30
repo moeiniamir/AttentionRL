@@ -7,4 +7,5 @@ Pipfile
 v2/agent1.py
 **/logs
 v2/saved
+**/lightning_logs
 
