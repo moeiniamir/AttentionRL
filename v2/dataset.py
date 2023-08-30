@@ -16,23 +16,27 @@ if os.environ['USER'] == 'server':
 else:
     device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
+
 class COCODataset(D.Dataset):
-    def __init__(self, root="../Data/COCO17", train=True, length=None, indices=None, no_seg=False):
+    def __init__(self, root="../Data/COCO17", train=True, length=None, indices=None, no_seg=False, fix_resize=None):
         self.root = Path(root)
         self.no_seg = no_seg
+        self.fix_resize = fix_resize
 
         with open(self.root / 'annotations/captions_train2017.json', 'r') as f:
             images_info = json.load(f)
         self.file_name_to_id = dict()
         for image_info in images_info['images']:
             self.file_name_to_id[image_info['file_name']] = image_info['id']
-            self.file_name_to_id[image_info['id']] = image_info['file_name']  # for reverse search
+            # for reverse search
+            self.file_name_to_id[image_info['id']] = image_info['file_name']
 
         with open(self.root / 'cap_dict.json', 'r') as f:
             self.captions_dict = json.load(f)
 
         if train:
-            self.image_files = glob.glob(os.path.join(self.root / 'train2017', "*.jpg"))
+            self.image_files = glob.glob(
+                os.path.join(self.root / 'train2017', "*.jpg"))
         else:
             raise NotImplementedError
             # self.image_files = glob.glob(os.path.join(self.root / 'val2017', "*.jpg"))
@@ -51,8 +55,8 @@ class COCODataset(D.Dataset):
         file_name = image_file.split('/')[-1]
         # image_tensor = transforms.ToTensor()(image)
         image_tensor = transforms.Compose([
-            # transforms.Resize((image.height // 2, image.width // 2)),
-            transforms.Resize((224-3*32, 224-3*32)),
+            transforms.Resize((image.height // 2, image.width // 2)
+                              ) if self.fix_resize is None else transforms.Resize(self.fix_resize),
             transforms.ToTensor()
         ])(image)
 
@@ -62,7 +66,8 @@ class COCODataset(D.Dataset):
             with open(self.root / 'train2017seg' / (str(self.file_name_to_id[file_name]) + '.pkl'), 'rb') as f:
                 packed_seg_out = pickle.load(f)
             seg_output = unpack_new_seg_out(packed_seg_out)
-            seg_output = transforms.Resize(image_tensor.shape[1:])(torch.from_numpy(seg_output).to(device))
+            seg_output = transforms.Resize(image_tensor.shape[1:])(
+                torch.from_numpy(seg_output).to(device))
 
         return image_tensor, seg_output, self.file_name_to_id[file_name]
 
