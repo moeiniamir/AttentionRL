@@ -5,17 +5,18 @@ import os
 import tianshou as ts
 import einops
 from transformers.models.vit.modeling_vit import *
+import traceback
 
 
 class Actor(nn.Module):
     def __init__(self, input_size, basenet):
         super().__init__()
         self.basenet = basenet
-        self.curr_linear = nn.Linear(input_size, 1024)
-        self.adj_linear = nn.Linear(input_size, 1024)
-        self.layer_norm = nn.LayerNorm(1024)
+        self.curr_linear = nn.Linear(input_size, 256)
+        self.adj_linear = nn.Linear(input_size, 256)
+        self.layer_norm = nn.LayerNorm(256)
         # self.t = nn.Parameter(torch.tensor(100, dtype=torch.float32))
-        self.t = np.sqrt(1024)
+        self.t = np.sqrt(256)
 
     def forward(self, obs, **kwargs):
         curr, adj = self.basenet(obs)
@@ -29,15 +30,18 @@ class Actor(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, input_size, basenet):
+    def __init__(self, input_size, basenet, d_model=1024):
         super().__init__()
         self.basenet = basenet
-        self.linear = nn.Linear(input_size, 1)
+        self.embedding = nn.Linear(input_size, d_model)
+        self.linear = nn.Linear(d_model, 1)
         self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(
-            input_size, 4, input_size, 0.1, batch_first=True), 2)
+            d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 2)
 
     def forward(self, obs, **kwargs):
         curr, adj = self.basenet(obs)
+        curr = self.embedding(curr)
+        adj = self.embedding(adj)
         ca_out = self.cross_attention(curr.unsqueeze(1), adj).squeeze()
         value = self.linear(ca_out)
         return value
