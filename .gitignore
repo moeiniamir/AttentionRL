@@ -9,3 +9,5 @@ v2/agent1.py
 v2/saved
 **/lightning_logs
 
+v2/.agent1.py
+v2/.mask_pred.py
