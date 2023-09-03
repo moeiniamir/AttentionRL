@@ -24,7 +24,7 @@ class BaseNetwork(nn.Module):
         self.patch_size = patch_size
         self.patch_h, self.patch_w = self.patch_size[0] // self.vit_patch_size, self.patch_size[
             1] // self.vit_patch_size
-        self.output_dim = self.vit.config.hidden_size
+        self.output_dim = self.vit.config.vocab_size
 
         for param in self.vit.parameters():
             param.requires_grad = False
