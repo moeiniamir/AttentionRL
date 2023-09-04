@@ -246,9 +246,9 @@ class Environment(gym.Env):
                 self.width - self.patch_size[1]) // self.patch_size[1]
         self.row, self.col = self.max_row // 2, self.max_col // 2
 
-        # self.seen_patches = torch.zeros((self.max_row + 1, self.max_col + 1))
-        self.seen_patches = torch.full((self.max_row + 1, self.max_col + 1), -0.5)
-        self.seen_masks = torch.zeros(self.current_seg.shape[0])
+        self.seen_patches = torch.zeros((self.max_row + 1, self.max_col + 1))
+        # self.seen_patches = torch.full((self.max_row + 1, self.max_col + 1), -0.5) # ruines __covered_done since it's not 0
+        self.seen_segments = torch.zeros(self.current_seg.shape[0])
         if self.max_len is None:
             self.history = History(self.patch_size, self.max_row, self.max_col)
         else:
@@ -256,6 +256,8 @@ class Environment(gym.Env):
 
         self.im = None
         self.render_mask = None
+        
+        _ = self._reward_return() # to set the first patch as seen
 
         return self._get_obs(), {}
 
@@ -282,19 +284,19 @@ class Environment(gym.Env):
         patch_seg = patch_seg.sum(dim=(1, 2)) / self.current_seg.sum(dim=(1, 2))
         seen_threshold = 0.7
         seg_reward = (patch_seg > seen_threshold)
-        seg_reward = seg_reward * (1 - self.seen_masks)
-        self.seen_masks += seg_reward
+        seg_reward = seg_reward * (1 - self.seen_segments)
+        self.seen_segments += seg_reward
         seg_reward = seg_reward.sum().item()
 
         return seg_reward
 
     def _reward_return(self):
-        reward = -self.seen_patches[self.row, self.col]
-        self.seen_patches[self.row, self.col] = 1
+        reward = -self.seen_patches[self.row, self.col] + .5
+        self.seen_patches[self.row, self.col] = 1.5
         return reward
 
     def _covered_done(self):
-        if self.seen_patches.sum() == (self.max_row + 1) * (self.max_col + 1):
+        if self.seen_patches.all():
             return True
         else:
             return False
