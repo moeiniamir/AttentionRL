@@ -258,6 +258,8 @@ class Environment(gym.Env):
         self.render_mask = None
         
         _ = self._reward_return() # to set the first patch as seen
+        _ = self._get_obs() # to add the first patch to history
+        _ = self._get_render_image() # to set the first patch as seen
 
         return self._get_obs(), {}
 
