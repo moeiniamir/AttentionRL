@@ -11,17 +11,19 @@ import torch.nn as nn
 import os
 import tianshou as ts
 import einops
-from transformers import BeitForMaskedImageModeling
+from .modeling_beit_custom import BeitForMaskedImageModeling
 
 
 class BaseNetwork(nn.Module):
-    def __init__(self, patch_size, *args, **kwargs):
+    def __init__(self, patch_size, remove_masked, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.vit = BeitForMaskedImageModeling.from_pretrained('microsoft/beit-base-patch16-224-pt22k', 
                                                    proxies={'http': '127.0.0.1:10809', 'https': '127.0.0.1:10809'},)
 
         self.vit_patch_size = self.vit.config.patch_size
         self.patch_size = patch_size
+        self.remove_masked = remove_masked
+        
         self.patch_h, self.patch_w = self.patch_size[0] // self.vit_patch_size, self.patch_size[
             1] // self.vit_patch_size
         self.output_dim = self.vit.config.vocab_size
@@ -46,7 +48,9 @@ class BaseNetwork(nn.Module):
         indices = self.build_indices(indices[..., 0], indices[..., 1], canvas).to(self.vit.device)
         out = self.vit(
             pixel_values=canvas.to(torch.float32).to(self.vit.device),
-            bool_masked_pos=(~kmask).to(self.vit.device))
+            bool_masked_pos=(~kmask).to(self.vit.device),
+            remove_masked=self.remove_masked,
+        )
         lhs = out.logits
         gathered = lhs.gather(1, einops.repeat(indices, "b s -> b s h", h=lhs.shape[2]))
         if state is None:  # means it's being used as base for ts Actor/Critic
