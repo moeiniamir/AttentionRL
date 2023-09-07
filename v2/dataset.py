@@ -11,11 +11,6 @@ import PIL
 import json
 from pathlib import Path
 
-if os.environ['USER'] == 'server':
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-else:
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
-
 
 class COCODataset(D.Dataset):
     def __init__(self, root="../Data/COCO17", train=True, length=None, indices=None, no_seg=False, fix_resize=None):
@@ -67,7 +62,9 @@ class COCODataset(D.Dataset):
                 packed_seg_out = pickle.load(f)
             seg_output = unpack_new_seg_out(packed_seg_out)
             seg_output = transforms.Resize(image_tensor.shape[1:])(
-                torch.from_numpy(seg_output).to(device))
+                torch.from_numpy(seg_output)
+                # .to(device)
+                )
 
         return image_tensor, seg_output, self.file_name_to_id[file_name]
 
