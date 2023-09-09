@@ -63,7 +63,6 @@ class COCODataset(D.Dataset):
             seg_output = unpack_new_seg_out(packed_seg_out)
             seg_output = transforms.Resize(image_tensor.shape[1:])(
                 torch.from_numpy(seg_output)
-                # .to(device)
                 )
 
         return image_tensor, seg_output, self.file_name_to_id[file_name]
