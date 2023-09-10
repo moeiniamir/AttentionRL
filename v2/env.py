@@ -1,6 +1,7 @@
 from pack_existing_segs import *
 from enum import Enum
 from IPython import display
+from ipywidgets import Output
 import matplotlib.pyplot as plt
 import torch
 import torch.utils.data as D
@@ -187,11 +188,12 @@ class LimitedHistory(AbstractHistory):
 class Environment(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 4}
 
-    def __init__(self, dataset, patch_size=(64, 64), max_len=None):
+    def __init__(self, dataset, patch_size=(64, 64), max_len=None, seen_threshold=1):
         self.dataloader = D.DataLoader(dataset, batch_size=1, shuffle=True)
         self.iterator = iter(self.dataloader)
         self.patch_size = patch_size
         self.max_len = max_len
+        self.seen_threshold = seen_threshold
 
         self.img_emtpy_patch = torch.zeros((patch_size[0] // 2, patch_size[1] // 2))
         self.img_emtpy_patch[::2, ::2] = 1
@@ -238,7 +240,9 @@ class Environment(gym.Env):
                                                            self.current_seg.shape[1] // self.seg_empty_patch.shape[0],
                                                            1)
         self.current_seg = torch.cat([repeated_empty_patch, self.current_seg, repeated_empty_patch], dim=2)
+        self.seg_sizes = self.current_seg.sum(dim=(1, 2))
 
+        # init image metadata
         self.image_id = str(self.image_id.item())
         _, self.height, self.width = self.current_image.shape
         self.captions = self.dataloader.dataset.captions_dict[self.image_id]
@@ -246,14 +250,14 @@ class Environment(gym.Env):
                 self.width - self.patch_size[1]) // self.patch_size[1]
         self.row, self.col = self.max_row // 2, self.max_col // 2
 
+        # init planes
         self.seen_patches = torch.zeros((self.max_row + 1, self.max_col + 1))
-        # self.seen_patches = torch.full((self.max_row + 1, self.max_col + 1), -0.5) # ruines __covered_done since it's not 0
-        self.seen_segments = torch.zeros(self.current_seg.shape[0])
         if self.max_len is None:
             self.history = History(self.patch_size, self.max_row, self.max_col)
         else:
             self.history = LimitedHistory(self.max_len, self.width, self.height, self.patch_size)
 
+        # init render
         self.im = None
         self.render_mask = None
         
@@ -263,34 +267,38 @@ class Environment(gym.Env):
 
         return self._get_obs(), {}
 
-    def _get_patch(self):
-        start_row, end_row = self.row * self.patch_size[0], (self.row + 1) * self.patch_size[0]
-        start_col, end_col = self.col * self.patch_size[1], (self.col + 1) * self.patch_size[1]
-        return self.current_image[:, start_row: end_row, start_col: end_col]
+
+    def _get_patch(self, base, row, col):
+        start_row, end_row = row * self.patch_size[0], (row + 1) * self.patch_size[0]
+        start_col, end_col = col * self.patch_size[1], (col + 1) * self.patch_size[1]
+        return base[..., start_row: end_row, start_col: end_col]
+    
+    def _get_curr_patch(self, base):
+        return self._get_patch(base, self.row, self.col)
 
     def _update_history(self, new_patch):
         self.history.append(new_patch, self.row, self.col)
         return self.history
 
     def _get_obs(self):
-        patch = self._get_patch()
+        patch = self._get_curr_patch(self.current_image)
         self._update_history(patch)
         return {
             'history': self.history.get_history_dict(),
         }
 
     def _reward_seg(self):
-        start_row, end_row = self.row * self.patch_size[0], (self.row + 1) * self.patch_size[0]
-        start_col, end_col = self.col * self.patch_size[1], (self.col + 1) * self.patch_size[1]
-        patch_seg = self.current_seg[:, start_row: end_row, start_col: end_col]
-        patch_seg = patch_seg.sum(dim=(1, 2)) / self.current_seg.sum(dim=(1, 2))
-        seen_threshold = 0.7
-        seg_reward = (patch_seg > seen_threshold)
-        seg_reward = seg_reward * (1 - self.seen_segments)
-        self.seen_segments += seg_reward
-        seg_reward = seg_reward.sum().item()
-
-        return seg_reward
+        patch_seg = self._get_curr_patch(self.current_seg)
+        patch_seg.zero_()
+        not_seen = self.current_seg.sum(dim=(1, 2))
+        rewarded = (not_seen/self.seg_sizes) <= 1 - self.seen_threshold
+        self.seg_sizes[rewarded] = 0
+        reward = rewarded.sum().item()
+        
+        print(not_seen)
+        print(self.seg_sizes)
+        print(reward)
+        return reward
 
     def _reward_return(self):
         reward = -self.seen_patches[self.row, self.col] + .5
@@ -317,10 +325,10 @@ class Environment(gym.Env):
 
         obs = self._get_obs()
         done = self._covered_done()
-        # reward_seg = self._reward_seg()
+        reward_seg = self._reward_seg()
         reward_return = self._reward_return()
         reward_done = 100 if done else 0
-        reward = reward_return + reward_done
+        reward = reward_seg
         truncated = False
         info = {}
         return obs, reward, done, truncated, info
@@ -344,10 +352,8 @@ class Environment(gym.Env):
             image[0] += (~kmask) * 0.5
             image[2] += pmask * 0.5
 
-        start_row, end_row = row * self.patch_size[0], (row + 1) * self.patch_size[0]
-        start_col, end_col = col * self.patch_size[1], (col + 1) * self.patch_size[1]
-        self.render_mask[start_row: end_row, start_col: end_col] = 0.8 * self.render_mask[start_row: end_row,
-                                                                         start_col: end_col]
+        patch = self._get_patch(self.render_mask, row, col)
+        patch[...] = self._get_patch(self.render_mask, row, col) * 0.8
         image = image * self.render_mask
 
         image = einops.rearrange(image, 'c h w -> h w c')
@@ -360,5 +366,4 @@ class Environment(gym.Env):
         else:
             display.clear_output(wait=True)
             self.im.set_data(self._get_render_image())
-            # self.im.axes.add_image(self.im)
             display.display(plt.gcf())
