@@ -32,6 +32,11 @@ class COCODataset(D.Dataset):
         if train:
             self.image_files = glob.glob(
                 os.path.join(self.root / 'train2017', "*.jpg"))
+            if not self.no_seg:
+                self.image_files = [image_file for image_file in self.image_files if
+                                    os.path.exists(self.root / 'train2017seg' / (str(
+                                        self.file_name_to_id[image_file.split('/')[-1]]) + '.pkl'))]
+
         else:
             raise NotImplementedError
             # self.image_files = glob.glob(os.path.join(self.root / 'val2017', "*.jpg"))
@@ -61,9 +66,9 @@ class COCODataset(D.Dataset):
             with open(self.root / 'train2017seg' / (str(self.file_name_to_id[file_name]) + '.pkl'), 'rb') as f:
                 packed_seg_out = pickle.load(f)
             seg_output = unpack_new_seg_out(packed_seg_out)
-            seg_output = transforms.Resize(image_tensor.shape[1:])(
+            seg_output = transforms.Resize(image_tensor.shape[1:], antialias=True)(
                 torch.from_numpy(seg_output)
-                )
+            )
 
         return image_tensor, seg_output, self.file_name_to_id[file_name]
 
