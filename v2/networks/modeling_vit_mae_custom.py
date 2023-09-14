@@ -270,7 +270,7 @@ class ViTMAEEmbeddings(nn.Module):
             padded_mask = kwargs['padded_mask'] # bxT
             idx = last_positions.unsqueeze(-1).repeat(1, 1, embeddings.shape[-1])
             src = self.order_embeddings.repeat(batch_size, 1, 1) * (~padded_mask.unsqueeze(-1))
-            torch.scatter_add(embeddings, 1, idx, src)
+            embeddings.scatter_add_(1, idx, src)
         # !
 
         # !: don't mask
@@ -369,8 +369,9 @@ class ViTMAESelfAttention(nn.Module):
         # kmask.shape = (batch_size, seq_len)
         # attention_scores.shape = (batch_size, num_heads, seq_len, seq_len)
         kmask = nn.functional.pad(kmask, (1, 0), value=True)
-        attention_scores = torch.where(kmask.unsqueeze(-1).unsqueeze(1), -1e9, attention_scores)
-        attention_scores = torch.where(kmask.unsqueeze(1).unsqueeze(1), -1e9, attention_scores)
+        nkmask = ~kmask
+        attention_scores = torch.where(nkmask.unsqueeze(-1).unsqueeze(1), -1e9, attention_scores)
+        attention_scores = torch.where(nkmask.unsqueeze(1).unsqueeze(1), -1e9, attention_scores)
         # !
 
         # Normalize the attention scores to probabilities.

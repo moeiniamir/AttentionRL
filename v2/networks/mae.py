@@ -52,4 +52,11 @@ class BaseNetwork(nn.Module):
             kmask=kmask.to(self.vit.device),
         )
         lhs = out['last_hidden_state']
-        return lhs[:, 0], None
+        
+        idx = last_positions[:, [-1]].unsqueeze(-1).expand(-1, -1, lhs.shape[2])
+        gathered = lhs.gather(1, idx)
+        out = gathered.squeeze(1)
+        
+        # out = lhs[:, -1]
+        
+        return out, None
