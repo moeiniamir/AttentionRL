@@ -54,10 +54,10 @@ class Actor(nn.Module):
             self.output_dim,
             hidden_sizes,
             device=self.device,
-            activation=nn.Tanh
+            activation=nn.ELU
         )
         with torch.no_grad():
-            self.last.model[-1].weight /= 100
+            self.last.model[-1].weight /= 1000
         self.softmax_output = softmax_output
 
     def forward(
@@ -114,7 +114,7 @@ class Critic(nn.Module):
             last_size,
             hidden_sizes,
             device=self.device,
-            activation=nn.Tanh
+            activation=nn.ELU
         )
 
     def forward(
