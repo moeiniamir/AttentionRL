@@ -8,7 +8,7 @@ from transformers.models.vit.modeling_vit import *
 import traceback
 
 
-class Actor(nn.Module):
+class MulActor(nn.Module):
     def __init__(self, input_size, basenet):
         super().__init__()
         self.basenet = basenet
@@ -29,7 +29,7 @@ class Actor(nn.Module):
         return pi, None
 
 
-class Critic(nn.Module):
+class CACritic(nn.Module):
     def __init__(self, input_size, basenet, d_model=1024):
         super().__init__()
         self.basenet = basenet

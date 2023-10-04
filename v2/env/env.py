@@ -143,8 +143,8 @@ class Environment(gym.Env):
         not_seen = self.current_seg.sum(dim=(1, 2))
         rewarded = (not_seen/self.seg_sizes) <= 1 - self.seen_threshold
         self.seg_sizes[rewarded] = 0
+        rewarded = rewarded.to(torch.int)*.25
         reward = rewarded.sum().item()
-
         return reward
 
     def _reward_return(self):
