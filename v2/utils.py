@@ -3,13 +3,24 @@ import numpy as np
 import cv2
 import gc
 from tqdm import tqdm
-
 from torchvision.transforms import Compose, Normalize
-
-image_net_mean = torch.Tensor([0.485, 0.456, 0.406])
-image_net_std = torch.Tensor([0.229, 0.224, 0.225])
-
 import matplotlib.pyplot as plt
+
+from torch.utils.tensorboard import SummaryWriter
+from tianshou.utils import WandbLogger, LazyLogger
+def get_wandb(use_wandb):
+    if use_wandb:
+        wandb_logger = WandbLogger(
+            train_interval=1,
+            test_interval=1,
+            update_interval=1,
+            project="AttentionRL",
+        )
+        wandb_logger.load(SummaryWriter("./logs"))
+    else:
+        wandb_logger = LazyLogger()
+    wandb_logger.use_wandb = use_wandb
+    return wandb_logger
 
 class NormalizeInverse(Normalize):
     """
@@ -25,6 +36,8 @@ class NormalizeInverse(Normalize):
     def __call__(self, tensor):
         return super().__call__(tensor.clone())
 
+image_net_mean = torch.Tensor([0.485, 0.456, 0.406])
+image_net_std = torch.Tensor([0.229, 0.224, 0.225])
 image_net_preprocessing = Compose([
     Normalize(
         mean=image_net_mean,
