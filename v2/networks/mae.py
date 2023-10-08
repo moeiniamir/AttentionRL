@@ -30,6 +30,9 @@ class BaseNetwork(nn.Module):
 
         for param in self.vit.parameters():
             param.requires_grad = False
+            
+        self.store_output = False
+        self.stored_output = None
 
     def build_indices(self, row, col, canvas):
         w = canvas.shape[3] // self.vit_patch_size
@@ -38,6 +41,11 @@ class BaseNetwork(nn.Module):
         return curr_index
 
     def forward(self, obs, state=-1, **kwargs):
+        if self.stored_output is not None:
+            stored_output = self.stored_output
+            self.stored_output = None
+            return stored_output, None
+        
         history = obs['history']
         kmask = history['kmask'][:, ::self.vit_patch_size,
                                  ::self.vit_patch_size].flatten(1)
@@ -51,6 +59,10 @@ class BaseNetwork(nn.Module):
             padded_mask=padded_mask.to(self.vit.device),
             kmask=kmask.to(self.vit.device),
         )
+        
+        # print('after mae forward')
+        # print(torch.cuda.memory_summary())
+        
         lhs = out['last_hidden_state']
         
         # idx = last_positions[:, [-1]].unsqueeze(-1).expand(-1, -1, lhs.shape[2])
@@ -58,5 +70,9 @@ class BaseNetwork(nn.Module):
         # out = gathered.squeeze(1)
         
         out = lhs[:, -1]
+        
+        if self.store_output:
+            self.stored_output = out
+            self.store_output = False
         
         return out, None

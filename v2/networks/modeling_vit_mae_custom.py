@@ -256,14 +256,14 @@ class ViTMAEEmbeddings(nn.Module):
 
         # add position embeddings w/o cls token
         embeddings = embeddings + self.position_embeddings[:, 1:, :]
-        # ! : variable size image
+        #! : variable size image
         # pos_embed = get_2d_sincos_pos_embed(
         #     self.position_embeddings.shape[-1], int(self.patch_embeddings.num_patches**0.5), add_cls_token=True
         # )
         # pos_embed = torch.from_numpy(pos_embed).float().unsqueeze(0) # may need broadcasting to be the same as self.position_embeddings
-        # !
+        #!
         
-        # !: add order embedding
+        #!: add order embedding
         if self.n_last_positions > 0:
             # self.order_embeddings.shape = (1, T, hidden_size)
             last_positions = kwargs['last_positions'] # bxT
@@ -271,13 +271,13 @@ class ViTMAEEmbeddings(nn.Module):
             idx = last_positions.unsqueeze(-1).repeat(1, 1, embeddings.shape[-1])
             src = self.order_embeddings.repeat(batch_size, 1, 1) * (~padded_mask.unsqueeze(-1))
             embeddings.scatter_add_(1, idx, src)
-        # !
+        #!
 
-        # !: don't mask
+        #!: don't mask
         # masking: length -> length * config.mask_ratio
         # embeddings, mask, ids_restore = self.random_masking(embeddings, noise)
         mask, ids_restore = None, None
-        # !
+        #!
         
 
         # append cls token
@@ -319,7 +319,7 @@ class ViTMAEPatchEmbeddings(nn.Module):
             raise ValueError(
                 f"Input image size ({height}*{width}) doesn't match model ({self.image_size[0]}*{self.image_size[1]})."
             )
-            # ! : set num_patches here again. get rid of the error.
+            #! : set num_patches here again. get rid of the error.
         x = self.projection(pixel_values).flatten(2).transpose(1, 2)
         return x
 
@@ -364,7 +364,7 @@ class ViTMAESelfAttention(nn.Module):
 
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         
-        # ! 
+        #! 
         kmask = kwargs['kmask']
         # kmask.shape = (batch_size, seq_len)
         # attention_scores.shape = (batch_size, num_heads, seq_len, seq_len)
@@ -372,7 +372,7 @@ class ViTMAESelfAttention(nn.Module):
         nkmask = ~kmask # todo optimize: swap where args, remove this
         attention_scores = torch.where(nkmask.unsqueeze(-1).unsqueeze(1), -1e9, attention_scores)
         attention_scores = torch.where(nkmask.unsqueeze(1).unsqueeze(1), -1e9, attention_scores)
-        # !
+        #!
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.functional.softmax(attention_scores, dim=-1)
