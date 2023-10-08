@@ -2,6 +2,9 @@ from tianshou.data import Batch
 from tianshou.trainer.offpolicy import *
 from transformers.models.vit.modeling_vit import *
 from tianshou.policy import DQNPolicy
+import tianshou as ts
+import random
+import numpy
 
 def polyack_sync(self):
     current_state_dict = self.model.state_dict()
@@ -39,4 +42,16 @@ class CustomOffpolicyTrainer(OffpolicyTrainer):
             self.gradient_step += 1
             losses = self.policy.update(self.batch_size, self.train_collector.buffer)
             self.log_update_data(data, losses)
+
+class CustomSubprocVectorEnv(ts.env.SubprocVectorEnv):
+    def mix_envs(self, action_list, episode_len):
+        # build a list of numbers of len env_num whose numbers are evenly distributed in [0, episode_len)
+        action_count_list = np.linspace(0, episode_len, self.env_num + 1, dtype=np.int32, endpoint=False)[1:]
+        for i in range(self.env_num):
+                for _ in range(action_count_list[i]):
+                    self.workers[i].send(random.choice(action_list))
+                    observation, reward, terminated, truncated, info = self.workers[i].recv()
+                    assert not truncated, "The episode should not be truncated in mixing"
+                    if terminated:
+                        self.workers[i].send(None)
 
