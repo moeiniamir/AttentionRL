@@ -127,7 +127,12 @@ class Environment(gym.Env):
         return self._get_patch(base, self.row, self.col)
 
     def _update_history(self, new_patch):
-        self.history.append(new_patch, self.row, self.col)
+        self.history.append(new_patch, self.row, self.col,
+                            # right=self._get_patch(self.current_image, self.row, self.col+1) if self.col < self.max_col else None,#! cheat
+                            # left=self._get_patch(self.current_image, self.row, self.col-1) if self.col > 0 else None ,#! cheat
+                            # top=self._get_patch(self.current_image, self.row+1, self.col) if self.row < self.max_row else None,#! cheat
+                            # bot=self._get_patch(self.current_image, self.row-1, self.col) if self.row > 0 else None,#! cheat
+                            ) 
         return self.history
 
     def _get_obs(self):
