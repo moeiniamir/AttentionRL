@@ -82,6 +82,7 @@ class BaseNetwork(nn.Module):
 
 class OrderEmbeddingBaseNetwork(BaseNetwork):
     def __init__(self, patch_size, n_last_positions, *args, **kwargs):
+        assert n_last_positions > 0
         super().__init__(patch_size, 0, *args, **kwargs)
         self.n_last_positions = n_last_positions
         if self.n_last_positions > 0:
@@ -97,26 +98,25 @@ class OrderEmbeddingBaseNetwork(BaseNetwork):
 
         history = obs['history']
         kmask = history['kmask'][:, ::self.vit_patch_size,
-                                 ::self.vit_patch_size].flatten(1)
-        canvas = history['history']
-        last_positions = history['last_positions']
-        padded_mask = history['padded_mask']
-        last_positions = self.build_indices(
-            last_positions[..., 0], last_positions[..., 1], canvas).to(self.vit.device)
+                                 ::self.vit_patch_size].flatten(1).to(self.vit.device)
+        canvas = history['history'].to(torch.float32).to(self.vit.device)
         out = self.vit(
-            pixel_values=canvas.to(torch.float32).to(self.vit.device),
-            last_positions=last_positions.to(self.vit.device),
-            padded_mask=padded_mask.to(self.vit.device),
-            kmask=kmask.to(self.vit.device),
+            pixel_values=canvas,
+            last_positions=None,
+            padded_mask=None,
+            kmask=kmask,
         )
 
+        padded_mask = history['padded_mask'].to(self.vit.device)
+        last_positions = history['last_positions']
+        last_positions = self.build_indices(
+            last_positions[..., 0], last_positions[..., 1], canvas).to(self.vit.device)
         lhs = out['last_hidden_state']
-
-        out = lhs[:, -1]
-
-        #!
-        
-        #!
+        lhs = lhs[:, 1:]
+        idx = last_positions.unsqueeze(-1).repeat(1, 1, lhs.shape[-1])
+        src = self.order_embeddings.repeat(lhs.shape[0], 1, 1) * (~padded_mask.unsqueeze(-1))
+        lhs.scatter_add_(1, idx, src)
+        out = lhs
 
         if self.store_output:
             self.stored_output = out
