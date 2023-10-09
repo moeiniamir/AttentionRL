@@ -71,7 +71,7 @@ class BaseNetwork(nn.Module):
         # gathered = lhs.gather(1, idx)
         # out = gathered.squeeze(1)
 
-        out = lhs[:, -1]
+        out = lhs[:, 0]
 
         if self.store_output:
             self.stored_output = out
@@ -112,9 +112,6 @@ class OrderEmbeddingBaseNetwork(BaseNetwork):
 
         lhs = out['last_hidden_state']
 
-        print(out.keys())
-        print(lhs.shape)
-        
         out = lhs[:, -1]
 
         #!
