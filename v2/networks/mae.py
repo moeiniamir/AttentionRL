@@ -18,19 +18,20 @@ class BaseNetwork(nn.Module):
     def __init__(self, patch_size, n_last_positions, *args, **kwargs):
         super().__init__(*args, **kwargs)
         config = ViTMAEConfig.from_pretrained('facebook/vit-mae-base',
-                                                    proxies={'http': '127.0.0.1:10809', 'https': '127.0.0.1:10809'},)
+                                              proxies={'http': '127.0.0.1:10809', 'https': '127.0.0.1:10809'},)
         config.n_last_positions = n_last_positions
-        self.vit = ViTMAEModel.from_pretrained('facebook/vit-mae-base', config=config)        
+        self.vit = ViTMAEModel.from_pretrained(
+            'facebook/vit-mae-base', config=config)
         self.vit_patch_size = self.vit.config.patch_size
         self.patch_size = patch_size
-        
+
         self.patch_h, self.patch_w = self.patch_size[0] // self.vit_patch_size, self.patch_size[
             1] // self.vit_patch_size
         self.output_dim = self.vit.config.hidden_size
 
         for param in self.vit.parameters():
             param.requires_grad = False
-            
+
         self.store_output = False
         self.stored_output = None
 
@@ -45,34 +46,83 @@ class BaseNetwork(nn.Module):
             stored_output = self.stored_output
             self.stored_output = None
             return stored_output, None
-        
+
         history = obs['history']
         kmask = history['kmask'][:, ::self.vit_patch_size,
                                  ::self.vit_patch_size].flatten(1)
         canvas = history['history']
         last_positions = history['last_positions']
         padded_mask = history['padded_mask']
-        last_positions = self.build_indices(last_positions[..., 0], last_positions[..., 1], canvas).to(self.vit.device)
+        last_positions = self.build_indices(
+            last_positions[..., 0], last_positions[..., 1], canvas).to(self.vit.device)
         out = self.vit(
             pixel_values=canvas.to(torch.float32).to(self.vit.device),
             last_positions=last_positions.to(self.vit.device),
             padded_mask=padded_mask.to(self.vit.device),
             kmask=kmask.to(self.vit.device),
         )
-        
+
         # print('after mae forward')
         # print(torch.cuda.memory_summary())
-        
+
         lhs = out['last_hidden_state']
-        
+
         # idx = last_positions[:, [-1]].unsqueeze(-1).expand(-1, -1, lhs.shape[2])
         # gathered = lhs.gather(1, idx)
         # out = gathered.squeeze(1)
-        
+
         out = lhs[:, -1]
-        
+
         if self.store_output:
             self.stored_output = out
             self.store_output = False
+
+        return out, None
+
+
+class OrderEmbeddingBaseNetwork(BaseNetwork):
+    def __init__(self, patch_size, n_last_positions, *args, **kwargs):
+        super().__init__(patch_size, 0, *args, **kwargs)
+        self.n_last_positions = n_last_positions
+        if self.n_last_positions > 0:
+            self.order_embeddings = nn.Parameter(
+                torch.zeros(1, self.n_last_positions, self.vit.config.hidden_size), requires_grad=True
+            )
+
+    def forward(self, obs, state=-1, **kwargs):
+        if self.stored_output is not None:
+            stored_output = self.stored_output
+            self.stored_output = None
+            return stored_output, None
+
+        history = obs['history']
+        kmask = history['kmask'][:, ::self.vit_patch_size,
+                                 ::self.vit_patch_size].flatten(1)
+        canvas = history['history']
+        last_positions = history['last_positions']
+        padded_mask = history['padded_mask']
+        last_positions = self.build_indices(
+            last_positions[..., 0], last_positions[..., 1], canvas).to(self.vit.device)
+        out = self.vit(
+            pixel_values=canvas.to(torch.float32).to(self.vit.device),
+            last_positions=last_positions.to(self.vit.device),
+            padded_mask=padded_mask.to(self.vit.device),
+            kmask=kmask.to(self.vit.device),
+        )
+
+        lhs = out['last_hidden_state']
+
+        print(out.keys())
+        print(lhs.shape)
         
+        out = lhs[:, -1]
+
+        #!
+        
+        #!
+
+        if self.store_output:
+            self.stored_output = out
+            self.store_output = False
+
         return out, None
