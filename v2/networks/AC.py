@@ -29,7 +29,7 @@ class MulActor(nn.Module):
         return pi, None
 
 
-class CACritic(nn.Module):
+class CAAdjCritic(nn.Module):
     def __init__(self, input_size, basenet, d_model=1024):
         super().__init__()
         self.basenet = basenet
@@ -45,3 +45,36 @@ class CACritic(nn.Module):
         ca_out = self.cross_attention(curr.unsqueeze(1), adj).squeeze()
         value = self.linear(ca_out)
         return value
+
+
+class CrossAttentionActor(nn.Module):
+    def __init__(self, preprocess, d_model, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.preprocess = preprocess
+        self.linear = nn.Linear(d_model, 4)
+        with torch.no_grad():
+            self.linear.weight /= 1000
+        self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(
+            d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 3)
+    
+    def forward(self, obs, **kwargs):
+        lhs, _ = self.preprocess(obs)
+        emb = self.cross_attention(lhs[:, [-1]], lhs[:, 1:]).squeeze(1)
+        logits = self.linear(emb)
+        print(logits.shape)
+        return logits, None
+
+
+class CrossAttentionCritic(nn.Module):
+    def __init__(self, preprocess, d_model, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.preprocess = preprocess
+        self.linear = nn.Linear(d_model, 1)
+        self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(
+            d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 3)
+    
+    def forward(self, obs, **kwargs):
+        lhs, _ = self.preprocess(obs)
+        emb = self.cross_attention(lhs[:, [-1]], lhs[:, 1:]).squeeze(1)
+        value = self.linear(emb)
+        return value, None
