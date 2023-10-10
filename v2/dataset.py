@@ -44,7 +44,8 @@ class COCODataset(D.Dataset):
         assert length is None or indices is None, "Cannot specify both len and indices"
         assert length is not None or indices is not None, "Must specify either len or indices"
         if length is not None:
-            self.image_files = random.sample(self.image_files, length)
+            # self.image_files = random.sample(self.image_files, length)
+            self.image_files = sorted(self.image_files)[:length]
         else:
             self.image_files = [self.image_files[i] for i in indices]
 
