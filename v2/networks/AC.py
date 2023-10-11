@@ -50,31 +50,36 @@ class CAAdjCritic(nn.Module):
 class CrossAttentionActor(nn.Module):
     def __init__(self, preprocess, d_model, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.preprocess = preprocess
         self.linear = nn.Linear(d_model, 4)
         with torch.no_grad():
             self.linear.weight /= 1000
+            
+        self.preprocess = preprocess
         self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(
             d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 3)
     
     def forward(self, obs, **kwargs):
-        lhs, _ = self.preprocess(obs)
-        emb = self.cross_attention(lhs[:, [-1]], lhs[:, 1:]).squeeze(1)
+        lhs, kmask, indices = self.preprocess(obs)
+        indices = indices[:, [-1]]
+        tgt = lhs.gather(1, indices.unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
+        emb = self.cross_attention(tgt, lhs, memory_key_padding_mask=kmask).squeeze(1)
         logits = self.linear(emb)
-        print(logits.shape)
         return logits, None
 
 
 class CrossAttentionCritic(nn.Module):
     def __init__(self, preprocess, d_model, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.preprocess = preprocess
         self.linear = nn.Linear(d_model, 1)
+        
+        self.preprocess = preprocess
         self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(
-            d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 3)
+            d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 2)
     
     def forward(self, obs, **kwargs):
-        lhs, _ = self.preprocess(obs)
-        emb = self.cross_attention(lhs[:, [-1]], lhs[:, 1:]).squeeze(1)
+        lhs, kmask, indices = self.preprocess(obs)
+        indices = indices[:, [-1]]
+        tgt = lhs.gather(1, indices.unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
+        emb = self.cross_attention(tgt, lhs, memory_key_padding_mask=kmask).squeeze(1)
         value = self.linear(emb)
-        return value, None
+        return value
