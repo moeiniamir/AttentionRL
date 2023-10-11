@@ -13,7 +13,6 @@ from .mul_limited_history import LimitedHistory
 from .mae_limited_history import MAELimitedHistory
 
 
-
 class Actions(Enum):
     UP = 0
     RIGHT = 1
@@ -132,7 +131,7 @@ class Environment(gym.Env):
                             # left=self._get_patch(self.current_image, self.row, self.col-1) if self.col > 0 else None ,#! cheat
                             # top=self._get_patch(self.current_image, self.row+1, self.col) if self.row < self.max_row else None,#! cheat
                             # bot=self._get_patch(self.current_image, self.row-1, self.col) if self.row > 0 else None,#! cheat
-                            ) 
+                            )
         return self.history
 
     def _get_obs(self):
@@ -197,27 +196,32 @@ class Environment(gym.Env):
 
         if self.render_mask is None:
             self.render_mask = torch.ones(image.shape[1:])
-
-        if 'kmask' in history:
-            kmask = history['kmask']
-            image[0] += (~kmask) * 0.5
-
-        if 'pmask' in history:
-            pmask = history['pmask']
-            image[2] += pmask * 0.5
-        
         patch = self._get_patch(self.render_mask, row, col)
         patch[...] = self._get_patch(self.render_mask, row, col) * 0.8
-        image = image * self.render_mask
+
+        # if 'kmask' in history:
+        #     kmask = history['kmask']
+        #     image[0] += (~kmask) * 0.5
+
+        # if 'pmask' in history:
+        #     pmask = history['pmask']
+        #     image[2] += pmask * 0.5
+
+        curr_indicator = torch.zeros(image.shape[1:])
+        curr_patch = self._get_patch(curr_indicator, row, col)
+        curr_patch[...] = +.5
+
+        image = image * self.render_mask + curr_indicator
 
         image = einops.rearrange(image, 'c h w -> h w c')
         return image
 
     def render(self):
+        display.clear_output(wait=True)
         if self.im is None:
-            self.im = plt.imshow(self._get_render_image())
-            display.display(plt.gcf())
+            self.im = plt.subplots()
+            self.im[1].imshow(self._get_render_image())
+            display.display(self.im[0])
         else:
-            display.clear_output(wait=True)
-            self.im.set_data(self._get_render_image())
-            display.display(plt.gcf())
+            self.im[1].get_children()[0].set_data(self._get_render_image())
+            display.display(self.im[0])
