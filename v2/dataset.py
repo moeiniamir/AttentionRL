@@ -36,16 +36,23 @@ class COCODataset(D.Dataset):
                 self.image_files = [image_file for image_file in self.image_files if
                                     os.path.exists(self.root / 'train2017seg' / (str(
                                         self.file_name_to_id[image_file.split('/')[-1]]) + '.pkl'))]
+            self.image_files.sort()
 
-        else:
-            raise NotImplementedError
-            # self.image_files = glob.glob(os.path.join(self.root / 'val2017', "*.jpg"))
+        else: #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! these are just the train2017 imges in reverse order. must segment test2017
+            self.image_files = glob.glob(
+                os.path.join(self.root / 'train2017', "*.jpg"))
+            if not self.no_seg:
+                self.image_files = [image_file for image_file in self.image_files if
+                                    os.path.exists(self.root / 'train2017seg' / (str(
+                                        self.file_name_to_id[image_file.split('/')[-1]]) + '.pkl'))]
+            self.image_files.sort()
+            self.image_files = self.image_files[::-1]
 
         assert length is None or indices is None, "Cannot specify both len and indices"
         assert length is not None or indices is not None, "Must specify either len or indices"
         if length is not None:
             # self.image_files = random.sample(self.image_files, length)
-            self.image_files = sorted(self.image_files)[:length]
+            self.image_files = self.image_files[:length]
         else:
             self.image_files = [self.image_files[i] for i in indices]
 
