@@ -88,9 +88,10 @@ class OrderEmbeddingBaseNetwork(BaseNetwork):
             self.order_embeddings = nn.Parameter(
                 torch.zeros(1, self.n_last_positions, self.vit.config.hidden_size), requires_grad=True
             )
-        self.pos_emb = get_2d_sincos_pos_embed(self.vit.config.hidden_size, int(
+        pos_emb = get_2d_sincos_pos_embed(self.vit.config.hidden_size, int(
             self.vit.embeddings.patch_embeddings.num_patches**0.5), add_cls_token=False) 
-        self.pos_emb = torch.from_numpy(self.pos_emb).unsqueeze(0).to(torch.float32)
+        pos_emb = torch.from_numpy(pos_emb).unsqueeze(0).to(torch.float32)
+        self.register_buffer('mae_pos_emb', pos_emb)
 
     def forward(self, obs, state=-1, **kwargs):
         if self.stored_output is not None:
@@ -121,7 +122,7 @@ class OrderEmbeddingBaseNetwork(BaseNetwork):
         lhs.scatter_add_(1, idx, src)
         
         # add pos embedding
-        lhs = lhs + self.pos_emb
+        lhs = lhs + self.mae_pos_emb
         
         output = (lhs, kmask, last_positions)
         if self.store_output:
