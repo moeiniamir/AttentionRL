@@ -95,7 +95,7 @@ class Environment(gym.Env):
         self.row, self.col = self.max_row // 2, self.max_col // 2
 
         # init planes
-        self.seen_patches = torch.zeros((self.max_row + 1, self.max_col + 1))
+        self.seen_patches = torch.zeros((self.max_row + 1, self.max_col + 1)).to(torch.bool)
         if self.max_len is None:
             self.history = History(self.patch_size, self.max_row, self.max_col)
         elif self.n_last_positions:
@@ -152,8 +152,8 @@ class Environment(gym.Env):
         return reward
 
     def _reward_return(self):
-        reward = -self.seen_patches[self.row, self.col] + .5
-        self.seen_patches[self.row, self.col] = 1.5
+        reward = -.5 if self.seen_patches[self.row, self.col] else .25
+        self.seen_patches[self.row, self.col] = True
         return reward
 
     def _covered_done(self):
@@ -176,10 +176,10 @@ class Environment(gym.Env):
 
         obs = self._get_obs()
         done = self._covered_done()
-        reward_seg = self._reward_seg()
+        # reward_seg = self._reward_seg()
         reward_return = self._reward_return()
-        reward_done = 100 if done else 0
-        reward = reward_seg
+        # reward_done = 100 if done else 0
+        reward = reward_return
         truncated = False
         info = {}
         return obs, reward, done, truncated, info
@@ -199,9 +199,9 @@ class Environment(gym.Env):
         patch = self._get_patch(self.render_mask, row, col)
         patch[...] = self._get_patch(self.render_mask, row, col) * 0.8
 
-        # if 'kmask' in history:
-        #     kmask = history['kmask']
-        #     image[0] += (~kmask) * 0.5
+        if 'kmask' in history:
+            kmask = history['kmask']
+            image += (~kmask).to(torch.int32)
 
         # if 'pmask' in history:
         #     pmask = history['pmask']
@@ -209,9 +209,12 @@ class Environment(gym.Env):
 
         curr_indicator = torch.zeros(image.shape[1:])
         curr_patch = self._get_patch(curr_indicator, row, col)
-        curr_patch[...] = +.5
+        curr_patch[...] = +.3
 
-        image = image * self.render_mask + curr_indicator
+        image = image * self.render_mask
+        image[0] += curr_indicator
+        image.clamp_(0, 1)
+        
 
         image = einops.rearrange(image, 'c h w -> h w c')
         return image
