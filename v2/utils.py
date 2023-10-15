@@ -17,10 +17,12 @@ def get_wandb(use_wandb):
             project="AttentionRL",
         )
         wandb_logger.load(SummaryWriter("./logs"))
+        wandb_logger.wandb_run.log_code(exclude_fn=lambda path: "trash" in path)
     else:
         wandb_logger = LazyLogger()
     wandb_logger.use_wandb = use_wandb
     return wandb_logger
+
 
 class NormalizeInverse(Normalize):
     """
