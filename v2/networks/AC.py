@@ -74,7 +74,7 @@ class CrossAttentionCritic(nn.Module):
         
         self.preprocess = preprocess
         self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(
-            d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 2)
+            d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 3)
     
     def forward(self, obs, **kwargs):
         lhs, kmask, indices = self.preprocess(obs)

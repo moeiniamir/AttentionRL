@@ -152,7 +152,7 @@ class Environment(gym.Env):
         return reward
 
     def _reward_return(self):
-        reward = -.5 if self.seen_patches[self.row, self.col] else .25
+        reward = -.15 if self.seen_patches[self.row, self.col] else 0
         self.seen_patches[self.row, self.col] = True
         return reward
 
@@ -176,10 +176,10 @@ class Environment(gym.Env):
 
         obs = self._get_obs()
         done = self._covered_done()
-        # reward_seg = self._reward_seg()
+        reward_seg = self._reward_seg()
         reward_return = self._reward_return()
         # reward_done = 100 if done else 0
-        reward = reward_return
+        reward = reward_seg
         truncated = False
         info = {}
         return obs, reward, done, truncated, info
