@@ -34,7 +34,7 @@ class COCODataset(D.Dataset):
                 os.path.join(self.root / 'train2017', "*.jpg"))
             if not self.no_seg:
                 self.image_files = [image_file for image_file in self.image_files if
-                                    os.path.exists(self.root / 'train2017seg' / (str(
+                                    os.path.exists(self.root / 'obj_seg_train' / (str(
                                         self.file_name_to_id[image_file.split('/')[-1]]) + '.pkl'))]
             self.image_files.sort()
 
@@ -43,7 +43,7 @@ class COCODataset(D.Dataset):
                 os.path.join(self.root / 'train2017', "*.jpg"))
             if not self.no_seg:
                 self.image_files = [image_file for image_file in self.image_files if
-                                    os.path.exists(self.root / 'train2017seg' / (str(
+                                    os.path.exists(self.root / 'obj_seg_train' / (str(
                                         self.file_name_to_id[image_file.split('/')[-1]]) + '.pkl'))]
             self.image_files.sort()
             self.image_files = self.image_files[::-1]
@@ -71,7 +71,7 @@ class COCODataset(D.Dataset):
         if self.no_seg:
             seg_output = torch.empty((0, 0, 0))
         else:
-            with open(self.root / 'train2017seg' / (str(self.file_name_to_id[file_name]) + '.pkl'), 'rb') as f:
+            with open(self.root / 'obj_seg_train' / (str(self.file_name_to_id[file_name]) + '.pkl'), 'rb') as f:
                 packed_seg_out = pickle.load(f)
             seg_output = unpack_new_seg_out(packed_seg_out)
             seg_output = transforms.Resize(image_tensor.shape[1:], antialias=True)(
