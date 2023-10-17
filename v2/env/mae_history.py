@@ -3,10 +3,9 @@ import torch
 from .abstract_history import AbstractHistory
 
 
-class MAELimitedHistory(AbstractHistory):
-    def __init__(self, max_len, width, height, patch_size, n_last_positions):
+class MAEHistory(AbstractHistory):
+    def __init__(self, width, height, patch_size, n_last_positions):
         assert n_last_positions > 0, "n_last_positions must be positive"
-        self.max_len = max_len
         self.patch_size = patch_size
         self.loc_to_patch = {}
         self.loc_history = []
@@ -14,7 +13,12 @@ class MAELimitedHistory(AbstractHistory):
 
         self.canvas = torch.zeros((3, height + 2 * patch_size[0], width + 2 * patch_size[1]),
                                   dtype=torch.float16)
+        self.running_canvas = torch.zeros((3, height + 2 * patch_size[0], width + 2 * patch_size[1]),
+                                  dtype=torch.float16)
+
         self.kmask = torch.ones(
+            height + 2 * patch_size[0], width + 2 * patch_size[1], dtype=torch.bool)
+        self.running_kmask = torch.ones(
             height + 2 * patch_size[0], width + 2 * patch_size[1], dtype=torch.bool)
         self.current_loc = None
 
@@ -29,6 +33,8 @@ class MAELimitedHistory(AbstractHistory):
         self.loc_to_patch[(row + 1, col)] = kwargs['top']#! cheat
         self.loc_to_patch[(row - 1, col)] = kwargs['bot']#! cheat
         
+        self._set_patch(patch, self.running_canvas, row, col)
+        self._set_patch(1, self.running_kmask, row, col)
 
     def _set_patch(self, p, on, row, col):
         top = self.patch_size[0] * row
@@ -38,21 +44,8 @@ class MAELimitedHistory(AbstractHistory):
         on[..., top:bottom, left:right] = p
 
     def _fill_canvas(self):
-        self.kmask.fill_(0)
-        self.canvas.fill_(0)
-        iterator = iter(self.loc_history[::-1])
-        seen_indices = []
-        curr_len = 0
-        while curr_len < self.max_len:
-            try:
-                loc = next(iterator)
-            except StopIteration:
-                break
-            if loc not in seen_indices:
-                seen_indices.append(loc)
-                curr_len += 1
-            self._set_patch(self.loc_to_patch[loc], self.canvas, *loc)
-            self._set_patch(1, self.kmask, *loc)
+        self.kmask[:] = self.running_kmask
+        self.canvas[:] = self.running_canvas
         
         if self.loc_to_patch[(self.current_loc[0] + 1, self.current_loc[1])] is not None:
             self._set_patch(self.loc_to_patch[(self.current_loc[0] + 1, self.current_loc[1])],

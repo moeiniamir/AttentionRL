@@ -1,3 +1,4 @@
+from .mae_history import MAEHistory
 from pack_existing_segs import *
 from enum import Enum
 from IPython import display
@@ -97,7 +98,7 @@ class Environment(gym.Env):
         # init planes
         self.seen_patches = torch.zeros((self.max_row + 1, self.max_col + 1)).to(torch.bool)
         if self.max_len is None:
-            self.history = History(self.patch_size, self.max_row, self.max_col)
+            self.history = MAEHistory(self.patch_size, self.max_row, self.max_col)
         elif self.n_last_positions:
             self.history = MAELimitedHistory(
                 self.max_len, self.width, self.height, self.patch_size, self.n_last_positions)
@@ -127,10 +128,10 @@ class Environment(gym.Env):
 
     def _update_history(self, new_patch):
         self.history.append(new_patch, self.row, self.col,
-                            # right=self._get_patch(self.current_image, self.row, self.col+1) if self.col < self.max_col else None,#! cheat
-                            # left=self._get_patch(self.current_image, self.row, self.col-1) if self.col > 0 else None ,#! cheat
-                            # top=self._get_patch(self.current_image, self.row+1, self.col) if self.row < self.max_row else None,#! cheat
-                            # bot=self._get_patch(self.current_image, self.row-1, self.col) if self.row > 0 else None,#! cheat
+                            right=self._get_patch(self.current_image, self.row, self.col+1) if self.col < self.max_col else None,
+                            left=self._get_patch(self.current_image, self.row, self.col-1) if self.col > 0 else None ,
+                            top=self._get_patch(self.current_image, self.row+1, self.col) if self.row < self.max_row else None,
+                            bot=self._get_patch(self.current_image, self.row-1, self.col) if self.row > 0 else None,
                             )
         return self.history
 
