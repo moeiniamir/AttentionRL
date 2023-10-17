@@ -97,9 +97,9 @@ class Environment(gym.Env):
 
         # init planes
         self.seen_patches = torch.zeros((self.max_row + 1, self.max_col + 1)).to(torch.bool)
-        if self.max_len is None:
-            self.history = MAEHistory(self.patch_size, self.max_row, self.max_col)
-        elif self.n_last_positions:
+        if self.max_len is None and self.n_last_positions:
+            self.history = MAEHistory(self.width, self.height, self.patch_size, self.n_last_positions)
+        elif self.max_len is not None and self.n_last_positions:
             self.history = MAELimitedHistory(
                 self.max_len, self.width, self.height, self.patch_size, self.n_last_positions)
         else:

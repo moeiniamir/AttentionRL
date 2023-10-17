@@ -14,11 +14,11 @@ class MAEHistory(AbstractHistory):
         self.canvas = torch.zeros((3, height + 2 * patch_size[0], width + 2 * patch_size[1]),
                                   dtype=torch.float16)
         self.running_canvas = torch.zeros((3, height + 2 * patch_size[0], width + 2 * patch_size[1]),
-                                  dtype=torch.float16)
+                                          dtype=torch.float16)
 
-        self.kmask = torch.ones(
+        self.kmask = torch.empty(
             height + 2 * patch_size[0], width + 2 * patch_size[1], dtype=torch.bool)
-        self.running_kmask = torch.ones(
+        self.running_kmask = torch.zeros(
             height + 2 * patch_size[0], width + 2 * patch_size[1], dtype=torch.bool)
         self.current_loc = None
 
@@ -28,11 +28,11 @@ class MAEHistory(AbstractHistory):
         self.current_loc = (row, col)
         self.loc_history.append((row, col))
         self.loc_to_patch[(row, col)] = patch
-        self.loc_to_patch[(row, col + 1)] = kwargs['right']#! cheat
-        self.loc_to_patch[(row, col - 1)] = kwargs['left']#! cheat
-        self.loc_to_patch[(row + 1, col)] = kwargs['top']#! cheat
-        self.loc_to_patch[(row - 1, col)] = kwargs['bot']#! cheat
-        
+        self.loc_to_patch[(row, col + 1)] = kwargs['right']  # ! cheat
+        self.loc_to_patch[(row, col - 1)] = kwargs['left']  # ! cheat
+        self.loc_to_patch[(row + 1, col)] = kwargs['top']  # ! cheat
+        self.loc_to_patch[(row - 1, col)] = kwargs['bot']  # ! cheat
+
         self._set_patch(patch, self.running_canvas, row, col)
         self._set_patch(1, self.running_kmask, row, col)
 
@@ -46,23 +46,27 @@ class MAEHistory(AbstractHistory):
     def _fill_canvas(self):
         self.kmask[:] = self.running_kmask
         self.canvas[:] = self.running_canvas
-        
+
         if self.loc_to_patch[(self.current_loc[0] + 1, self.current_loc[1])] is not None:
             self._set_patch(self.loc_to_patch[(self.current_loc[0] + 1, self.current_loc[1])],
-                            self.canvas, self.current_loc[0] + 1, self.current_loc[1]) #! cheat
-            self._set_patch(1, self.kmask, self.current_loc[0] + 1, self.current_loc[1])
+                            self.canvas, self.current_loc[0] + 1, self.current_loc[1])  # ! cheat
+            self._set_patch(
+                1, self.kmask, self.current_loc[0] + 1, self.current_loc[1])
         if self.loc_to_patch[(self.current_loc[0] - 1, self.current_loc[1])] is not None:
             self._set_patch(self.loc_to_patch[(self.current_loc[0] - 1, self.current_loc[1])],
-                            self.canvas, self.current_loc[0] - 1, self.current_loc[1]) #! cheat
-            self._set_patch(1, self.kmask, self.current_loc[0] - 1, self.current_loc[1])
+                            self.canvas, self.current_loc[0] - 1, self.current_loc[1])  # ! cheat
+            self._set_patch(
+                1, self.kmask, self.current_loc[0] - 1, self.current_loc[1])
         if self.loc_to_patch[(self.current_loc[0], self.current_loc[1] + 1)] is not None:
             self._set_patch(self.loc_to_patch[(self.current_loc[0], self.current_loc[1] + 1)],
-                            self.canvas, self.current_loc[0], self.current_loc[1] + 1) #! cheat
-            self._set_patch(1, self.kmask, self.current_loc[0], self.current_loc[1] + 1)
+                            self.canvas, self.current_loc[0], self.current_loc[1] + 1)  # ! cheat
+            self._set_patch(
+                1, self.kmask, self.current_loc[0], self.current_loc[1] + 1)
         if self.loc_to_patch[(self.current_loc[0], self.current_loc[1] - 1)] is not None:
             self._set_patch(self.loc_to_patch[(self.current_loc[0], self.current_loc[1] - 1)],
-                            self.canvas, self.current_loc[0], self.current_loc[1] - 1) #! cheat
-            self._set_patch(1, self.kmask, self.current_loc[0], self.current_loc[1] - 1)
+                            self.canvas, self.current_loc[0], self.current_loc[1] - 1)  # ! cheat
+            self._set_patch(
+                1, self.kmask, self.current_loc[0], self.current_loc[1] - 1)
 
     def get_history_dict(self):
         self._fill_canvas()
@@ -77,12 +81,19 @@ class MAEHistory(AbstractHistory):
         last_positions = torch.nn.functional.pad(
             last_positions, (0, 0, self.n_last_positions - last_positions.shape[0], 0), mode='constant', value=1)
 
+        curr_row = self.current_loc[0]
+        curr_col = self.current_loc[1]
         history_dict = {
             'history': self.canvas,
             'kmask': self.kmask,
+            'running_kmask': self.running_kmask,
             'last_positions': last_positions,
             'padded_mask': padded_mask,
-            'curr_rel_row': self.current_loc[0],
-            'curr_rel_col': self.current_loc[1],
+            'curr_rel_row': curr_row,
+            'curr_rel_col': curr_col,
+            'urdl': torch.tensor(
+                [(curr_row - 1, curr_col), (curr_row, curr_col + 1),
+                 (curr_row + 1, curr_col), (curr_row, curr_col - 1)]
+            )
         }
         return history_dict

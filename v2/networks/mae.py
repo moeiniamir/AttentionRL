@@ -89,7 +89,7 @@ class OrderEmbeddingBaseNetwork(BaseNetwork):
                 torch.zeros(1, self.n_last_positions, self.vit.config.hidden_size), requires_grad=True
             )
         pos_emb = get_2d_sincos_pos_embed(self.vit.config.hidden_size, int(
-            self.vit.embeddings.patch_embeddings.num_patches**0.5), add_cls_token=False) 
+            self.vit.embeddings.patch_embeddings.num_patches**0.5), add_cls_token=False)
         pos_emb = torch.from_numpy(pos_emb).unsqueeze(0).to(torch.float32)
         self.register_buffer('mae_pos_emb', pos_emb)
 
@@ -120,11 +120,20 @@ class OrderEmbeddingBaseNetwork(BaseNetwork):
         src = self.order_embeddings.repeat(
             lhs.shape[0], 1, 1) * (~padded_mask.unsqueeze(-1))
         lhs.scatter_add_(1, idx, src)
-        
+        if 'running_kmask' in history:
+            running_kmask = history['running_kmask'][:, ::self.vit_patch_size,
+                                                     ::self.vit_patch_size].flatten(1).to(self.vit.device)
+            urdl = history['urdl']
+            urdl = self.build_indices(
+                urdl[..., 0], urdl[..., 1], canvas).to(self.vit.device)
+        else:
+            running_kmask = None
+            urdl = None
+
         # add pos embedding
         lhs = lhs + self.mae_pos_emb
-        
-        output = (lhs, kmask, last_positions)
+
+        output = (lhs, kmask, last_positions[:, [-1]], urdl, running_kmask)
         if self.store_output:
             self.stored_output = output
             self.store_output = False
