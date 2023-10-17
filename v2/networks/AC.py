@@ -108,7 +108,6 @@ class AdjCrossAttentionActor(nn.Module):
         lhs, kmask, last_position, urdl, running_kmask = self.preprocess(obs)
         tgt = lhs.gather(1, urdl.unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
         emb = self.cross_attention(tgt, lhs, memory_key_padding_mask=running_kmask).squeeze(1)
-        print(emb.shape)
         logits = self.linear(emb).squeeze(-1)
         print(logits.shape)
         return logits, None
