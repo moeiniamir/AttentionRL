@@ -19,6 +19,7 @@ class Actions(Enum):
     RIGHT = 1
     DOWN = 2
     LEFT = 3
+    END = 4
 
 
 class Environment(gym.Env):
@@ -179,6 +180,7 @@ class Environment(gym.Env):
         done = self._covered_done()
         reward_seg = self._reward_seg()
         reward_return = self._reward_return()
+        reward_step = -.1
         # reward_done = 100 if done else 0
         reward = reward_seg
         truncated = False
