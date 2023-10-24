@@ -244,7 +244,7 @@ class Environment(gym.Env):
 
         if 'kmask' in history:
             kmask = history['kmask']
-            image += (~kmask).to(torch.int32)
+            image = image + (~kmask).to(torch.int32)
 
         # if 'pmask' in history:
         #     pmask = history['pmask']
