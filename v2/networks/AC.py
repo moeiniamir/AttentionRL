@@ -136,7 +136,7 @@ class AdjCAAEnd(nn.Module):
         lhs, kmask, last_positions, urdl, running_kmask = self.preprocess(obs)
         tgt = lhs.gather(1, urdl.unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
         emb = self.cross_attention(
-            tgt, lhs, memory_key_padding_mask=~running_kmask).squeeze(1)
+            tgt, lhs, memory_key_padding_mask=~running_kmask)
         avg_emb = emb.mean(1, keepdim=True)
         act_logits = self.act_linear(emb).squeeze(-1)
         end_logit = self.end_linear(avg_emb).squeeze(-1)
@@ -149,7 +149,7 @@ class AdjCAC(CrossAttentionCritic):
         lhs, kmask, last_positions, urdl, running_kmask = self.preprocess(obs)
         tgt = lhs.gather(1, urdl.unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
         emb = self.cross_attention(
-            tgt, lhs, memory_key_padding_mask=~running_kmask).squeeze(1)
+            tgt, lhs, memory_key_padding_mask=~running_kmask)
         emb = emb.mean(1)
         value = self.linear(emb)
         return value
@@ -167,7 +167,7 @@ class TransformerStepCritic(nn.Module):
     def forward(self, obs, **kwargs):
         src, tgt, padded_mask = self.preprocess(obs)
         emb = self.transformer(
-            src, tgt, src_key_padding_mask=~padded_mask, memory_key_padding_mask=~padded_mask).squeeze(1)
+            src, tgt, src_key_padding_mask=~padded_mask, memory_key_padding_mask=~padded_mask).mean(1)
         value = self.linear(emb)
         return value
 
@@ -182,14 +182,16 @@ class TransformerStepActor(nn.Module):
             self.end_linear.weight /= 1000
 
         self.preprocess = preprocess
-        self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(
-            d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 3)
+        
+        # self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(
+        #     d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 3)
+        self.transformer = nn.Transformer(d_model=d_model, nhead=4, num_encoder_layers=1,
+                                          num_decoder_layers=2, dropout=0.1, batch_first=True, dim_feedforward=2048)
 
     def forward(self, obs, **kwargs):
-        lhs, kmask, last_positions, urdl, running_kmask = self.preprocess(obs)
-        tgt = lhs.gather(1, urdl.unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
+        src, tgt, padded_mask = self.preprocess(obs)
         emb = self.cross_attention(
-            tgt, lhs, memory_key_padding_mask=running_kmask).squeeze(1)
+            src, tgt, src_key_padding_mask=~padded_mask, memory_key_padding_mask=~padded_mask)
         avg_emb = emb.mean(1, keepdim=True)
         act_logits = self.act_linear(emb).squeeze(-1)
         end_logit = self.end_linear(avg_emb).squeeze(-1)
