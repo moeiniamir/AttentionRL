@@ -369,8 +369,8 @@ class ViTMAESelfAttention(nn.Module):
         # kmask.shape = (batch_size, seq_len)
         # attention_scores.shape = (batch_size, num_heads, seq_len, seq_len)
         kmask = nn.functional.pad(kmask, (1, 0), value=True)
-        attention_scores = torch.where(kmask.unsqueeze(-1).unsqueeze(1), -1e9, attention_scores)
-        attention_scores = torch.where(kmask.unsqueeze(1).unsqueeze(1), -1e9, attention_scores)
+        attention_scores = torch.where(kmask.unsqueeze(-1).unsqueeze(1), attention_scores, -1e9)
+        attention_scores = torch.where(kmask.unsqueeze(1).unsqueeze(1), attention_scores, -1e9)
         #!
 
         # Normalize the attention scores to probabilities.
