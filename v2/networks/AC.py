@@ -53,16 +53,18 @@ class CrossAttentionActor(nn.Module):
         self.linear = nn.Linear(d_model, 4)
         with torch.no_grad():
             self.linear.weight /= 1000
-            
+
         self.preprocess = preprocess
         self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(
             d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 3)
-    
+
     def forward(self, obs, **kwargs):
         lhs, kmask, last_positions, *_ = self.preprocess(obs)
-        tgt = lhs.gather(1, last_positions[:, [-1]].unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
+        tgt = lhs.gather(
+            1, last_positions[:, [-1]].unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
         kmask[0][0] = False
-        emb = self.cross_attention(tgt, lhs, memory_key_padding_mask=kmask).squeeze(1)
+        emb = self.cross_attention(
+            tgt, lhs, memory_key_padding_mask=kmask).squeeze(1)
         logits = self.linear(emb)
         return logits, None
 
@@ -71,15 +73,17 @@ class CrossAttentionCritic(nn.Module):
     def __init__(self, preprocess, d_model, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.linear = nn.Linear(d_model, 1)
-        
+
         self.preprocess = preprocess
         self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(
             d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 6)
-    
+
     def forward(self, obs, **kwargs):
         lhs, kmask, last_positions, *_ = self.preprocess(obs)
-        tgt = lhs.gather(1, last_positions[:, [-1]].unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
-        emb = self.cross_attention(tgt, lhs, memory_key_padding_mask=kmask).squeeze(1)
+        tgt = lhs.gather(
+            1, last_positions[:, [-1]].unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
+        emb = self.cross_attention(
+            tgt, lhs, memory_key_padding_mask=kmask).squeeze(1)
         value = self.linear(emb)
         return value
 
@@ -87,8 +91,10 @@ class CrossAttentionCritic(nn.Module):
 class AdjExcludeCAC(CrossAttentionCritic):
     def forward(self, obs, **kwargs):
         lhs, kmask, last_positions, urdl, running_kmask = self.preprocess(obs)
-        tgt = lhs.gather(1, last_positions[:, [-1]].unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
-        emb = self.cross_attention(tgt, lhs, memory_key_padding_mask=running_kmask).squeeze(1)
+        tgt = lhs.gather(
+            1, last_positions[:, [-1]].unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
+        emb = self.cross_attention(
+            tgt, lhs, memory_key_padding_mask=running_kmask).squeeze(1)
         value = self.linear(emb)
         return value
 
@@ -99,19 +105,20 @@ class AdjCrossAttentionActor(nn.Module):
         self.linear = nn.Linear(d_model, 1)
         with torch.no_grad():
             self.linear.weight /= 1000
-            
+
         self.preprocess = preprocess
         self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(
-            d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 3)        
-        
+            d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 3)
+
     def forward(self, obs, **kwargs):
         lhs, kmask, last_positions, urdl, running_kmask = self.preprocess(obs)
         tgt = lhs.gather(1, urdl.unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
-        emb = self.cross_attention(tgt, lhs, memory_key_padding_mask=running_kmask).squeeze(1)
+        emb = self.cross_attention(
+            tgt, lhs, memory_key_padding_mask=running_kmask).squeeze(1)
         logits = self.linear(emb).squeeze(-1)
         return logits, None
-    
-    
+
+
 class AdjCAAEnd(nn.Module):
     def __init__(self, preprocess, d_model, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -120,27 +127,71 @@ class AdjCAAEnd(nn.Module):
         with torch.no_grad():
             self.act_linear.weight /= 1000
             self.end_linear.weight /= 1000
-            
+
         self.preprocess = preprocess
         self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(
-            d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 3)        
-        
+            d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 3)
+
     def forward(self, obs, **kwargs):
         lhs, kmask, last_positions, urdl, running_kmask = self.preprocess(obs)
         tgt = lhs.gather(1, urdl.unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
-        emb = self.cross_attention(tgt, lhs, memory_key_padding_mask=running_kmask).squeeze(1)
+        emb = self.cross_attention(
+            tgt, lhs, memory_key_padding_mask=~running_kmask).squeeze(1)
         avg_emb = emb.mean(1, keepdim=True)
         act_logits = self.act_linear(emb).squeeze(-1)
         end_logit = self.end_linear(avg_emb).squeeze(-1)
         logits = torch.cat([act_logits, end_logit], 1)
-        return logits, None    
-    
-    
+        return logits, None
+
+
 class AdjCAC(CrossAttentionCritic):
     def forward(self, obs, **kwargs):
         lhs, kmask, last_positions, urdl, running_kmask = self.preprocess(obs)
         tgt = lhs.gather(1, urdl.unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
-        emb = self.cross_attention(tgt, lhs, memory_key_padding_mask=running_kmask).squeeze(1)
+        emb = self.cross_attention(
+            tgt, lhs, memory_key_padding_mask=~running_kmask).squeeze(1)
         emb = emb.mean(1)
         value = self.linear(emb)
         return value
+
+
+# class TransformerStepCritic(nn.Module):
+#     def __init__(self, preprocess, d_model, *args, **kwargs) -> None:
+#         super().__init__(*args, **kwargs)
+#         self.linear = nn.Linear(d_model, 1)
+
+#         self.preprocess = preprocess
+#         self.transformer = nn.Transformer(d_model=d_model, nhead=4, num_encoder_layers=2,
+#                                           num_decoder_layers=4, dropout=0.1, batch_first=True, dim_feedforward=2048)
+
+#     def forward(self, obs, **kwargs):
+#         src, tgt, padded_mask = self.preprocess(obs)
+#         emb = self.transformer(
+#             src, tgt, src_key_padding_mask=padded_mask, ).squeeze(1)
+#         value = self.linear(emb)
+#         return value
+
+
+# class TransformerStepActor(nn.Module):
+#     def __init__(self, preprocess, d_model, *args, **kwargs) -> None:
+#         super().__init__(*args, **kwargs)
+#         self.act_linear = nn.Linear(d_model, 1)
+#         self.end_linear = nn.Linear(d_model, 1)
+#         with torch.no_grad():
+#             self.act_linear.weight /= 1000
+#             self.end_linear.weight /= 1000
+
+#         self.preprocess = preprocess
+#         self.cross_attention = nn.TransformerDecoder(nn.TransformerDecoderLayer(
+#             d_model=d_model, nhead=4, dropout=0.1, batch_first=True), 3)
+
+#     def forward(self, obs, **kwargs):
+#         lhs, kmask, last_positions, urdl, running_kmask = self.preprocess(obs)
+#         tgt = lhs.gather(1, urdl.unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
+#         emb = self.cross_attention(
+#             tgt, lhs, memory_key_padding_mask=running_kmask).squeeze(1)
+#         avg_emb = emb.mean(1, keepdim=True)
+#         act_logits = self.act_linear(emb).squeeze(-1)
+#         end_logit = self.end_linear(avg_emb).squeeze(-1)
+#         logits = torch.cat([act_logits, end_logit], 1)
+#         return logits, None

@@ -10,7 +10,7 @@ import torch.nn as nn
 import os
 import tianshou as ts
 import einops
-from .modeling_vit_mae_custom import ViTMAEModel, ViTMAEConfig, get_2d_sincos_pos_embed
+from .modeling_vit_mae_custom import ViTMAEModel, ViTMAEConfig, get_2d_sincos_pos_embed, get_1d_sincos_pos_embed_from_grid
 
 
 class BaseNetwork(nn.Module):
@@ -109,19 +109,18 @@ class OrderEmbeddingBaseNetwork(BaseNetwork):
             kmask=kmask,
         )
 
-        # add ord embedding
         last_positions = history['last_positions']
         last_positions = self.build_indices(
             last_positions[..., 0], last_positions[..., 1], canvas).to(self.vit.device)
         
         lhs = out['last_hidden_state'][:, 1:]
         
-        if self.n_last_positions > 0:
-            padded_mask = history['padded_mask'].to(self.vit.device)
-            idx = last_positions.unsqueeze(-1).repeat(1, 1, lhs.shape[-1])
-            src = self.order_embeddings.repeat(
-                lhs.shape[0], 1, 1) * (~padded_mask.unsqueeze(-1))
-            lhs.scatter_add_(1, idx, src)
+        # add ord embedding
+        idx = last_positions.unsqueeze(-1).repeat(1, 1, lhs.shape[-1])
+        padded_mask = history['padded_mask'].to(self.vit.device)
+        src = self.order_embeddings.repeat(
+            lhs.shape[0], 1, 1) * (~padded_mask.unsqueeze(-1))
+        lhs.scatter_add_(1, idx, src)
         
         if 'running_kmask' in history:
             running_kmask = history['running_kmask'][:, ::self.vit_patch_size,
@@ -143,3 +142,54 @@ class OrderEmbeddingBaseNetwork(BaseNetwork):
 
         return output
     
+    
+class PerStepMAE(OrderEmbeddingBaseNetwork):
+    def __init__(self, patch_size, n_last_positions, *args, **kwargs):
+        super().__init__(patch_size, 0, *args, **kwargs)
+        ord_emb = get_1d_sincos_pos_embed_from_grid(self.output_dim, np.range(n_last_positions))
+        ord_emb = torch.from_numpy(ord_emb).unsqueeze(0).to(torch.float32)
+        self.register_buffer('mae_ord_emb', ord_emb)
+    
+    def forward(self, obs, state=-1, **kwargs):
+        if self.stored_output is not None:
+            stored_output = self.stored_output
+            self.stored_output = None
+            return stored_output
+
+        history = obs['history']
+        kmask = history['kmask'][:, ::self.vit_patch_size,
+                                 ::self.vit_patch_size].flatten(1).to(self.vit.device)
+        canvas = history['history'].to(torch.float32).to(self.vit.device)
+        out = self.vit(
+            pixel_values=canvas,
+            last_positions=None,
+            padded_mask=None,
+            kmask=kmask,
+        )
+
+        last_positions = history['last_positions']
+        last_positions = self.build_indices(
+            last_positions[..., 0], last_positions[..., 1], canvas).to(self.vit.device)
+        
+        lhs = out['last_hidden_state'][:, 1:]
+        
+        padded_mask = history['padded_mask'].to(self.vit.device)
+        
+        urdl = history['urdl']
+        urdl = self.build_indices(
+            urdl[..., 0], urdl[..., 1], canvas).to(self.vit.device)
+
+        # add pos embedding
+        lhs += self.mae_pos_emb
+        
+        tgt = lhs.gather(1, urdl.unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
+        src = lhs.gather(1, last_positions.unsqueeze(-1).expand(-1, -1, lhs.shape[-1]))
+        src += self.mae_ord_emb
+
+        output = (src, tgt, padded_mask)
+        if self.store_output:
+            self.stored_output = output
+            self.store_output = False
+
+        return output
+        
