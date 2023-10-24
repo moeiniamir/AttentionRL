@@ -81,7 +81,6 @@ class BaseNetwork(nn.Module):
 
 class OrderEmbeddingBaseNetwork(BaseNetwork):
     def __init__(self, patch_size, n_last_positions, *args, **kwargs):
-        assert n_last_positions > 0
         super().__init__(patch_size, 0, *args, **kwargs)
         self.n_last_positions = n_last_positions
         if self.n_last_positions > 0:
@@ -111,15 +110,19 @@ class OrderEmbeddingBaseNetwork(BaseNetwork):
         )
 
         # add ord embedding
-        padded_mask = history['padded_mask'].to(self.vit.device)
         last_positions = history['last_positions']
         last_positions = self.build_indices(
             last_positions[..., 0], last_positions[..., 1], canvas).to(self.vit.device)
+        
         lhs = out['last_hidden_state'][:, 1:]
-        idx = last_positions.unsqueeze(-1).repeat(1, 1, lhs.shape[-1])
-        src = self.order_embeddings.repeat(
-            lhs.shape[0], 1, 1) * (~padded_mask.unsqueeze(-1))
-        lhs.scatter_add_(1, idx, src)
+        
+        if self.n_last_positions > 0:
+            padded_mask = history['padded_mask'].to(self.vit.device)
+            idx = last_positions.unsqueeze(-1).repeat(1, 1, lhs.shape[-1])
+            src = self.order_embeddings.repeat(
+                lhs.shape[0], 1, 1) * (~padded_mask.unsqueeze(-1))
+            lhs.scatter_add_(1, idx, src)
+        
         if 'running_kmask' in history:
             running_kmask = history['running_kmask'][:, ::self.vit_patch_size,
                                                      ::self.vit_patch_size].flatten(1).to(self.vit.device)
@@ -133,9 +136,10 @@ class OrderEmbeddingBaseNetwork(BaseNetwork):
         # add pos embedding
         lhs = lhs + self.mae_pos_emb
 
-        output = (lhs, kmask, last_positions[:, [-1]], urdl, running_kmask)
+        output = (lhs, kmask, last_positions, urdl, running_kmask)
         if self.store_output:
             self.stored_output = output
             self.store_output = False
 
         return output
+    
