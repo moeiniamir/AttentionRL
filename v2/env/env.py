@@ -25,12 +25,11 @@ class Actions(Enum):
 class Environment(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 4}
 
-    def __init__(self, dataset, patch_size=(64, 64), max_len=None, seen_threshold=1, n_last_positions=None):
+    def __init__(self, dataset, patch_size=(64, 64), max_len=None, n_last_positions=None):
         self.dataloader = D.DataLoader(dataset, batch_size=1, shuffle=True)
         self.iterator = iter(self.dataloader)
         self.patch_size = patch_size
         self.max_len = max_len
-        self.seen_threshold = seen_threshold
         self.n_last_positions = n_last_positions
 
         self.img_emtpy_patch = torch.zeros(
@@ -97,9 +96,11 @@ class Environment(gym.Env):
         self.row, self.col = self.max_row // 2, self.max_col // 2
 
         # init planes
-        self.seen_patches = torch.zeros((self.max_row + 1, self.max_col + 1)).to(torch.bool)
+        self.seen_patches = torch.zeros(
+            (self.max_row + 1, self.max_col + 1)).to(torch.bool)
         if self.max_len is None and self.n_last_positions:
-            self.history = MAEHistory(self.width, self.height, self.patch_size, self.n_last_positions)
+            self.history = MAEHistory(
+                self.width, self.height, self.patch_size, self.n_last_positions)
         elif self.max_len is not None and self.n_last_positions:
             self.history = MAELimitedHistory(
                 self.max_len, self.width, self.height, self.patch_size, self.n_last_positions)
@@ -129,16 +130,21 @@ class Environment(gym.Env):
 
     def _update_history(self, new_patch):
         self.history.append(new_patch, self.row, self.col,
-                            right=self._get_patch(self.current_image, self.row, self.col+1) if self.col < self.max_col else None,
-                            left=self._get_patch(self.current_image, self.row, self.col-1) if self.col > 0 else None ,
-                            top=self._get_patch(self.current_image, self.row+1, self.col) if self.row < self.max_row else None,
-                            bot=self._get_patch(self.current_image, self.row-1, self.col) if self.row > 0 else None,
+                            right=self._get_patch(
+                                self.current_image, self.row, self.col+1) if self.col < self.max_col else None,
+                            left=self._get_patch(
+                                self.current_image, self.row, self.col-1) if self.col > 0 else None,
+                            top=self._get_patch(
+                                self.current_image, self.row+1, self.col) if self.row < self.max_row else None,
+                            bot=self._get_patch(
+                                self.current_image, self.row-1, self.col) if self.row > 0 else None,
                             )
         return self.history
 
-    def _get_obs(self):
+    def _get_obs(self, update_history=True):
         patch = self._get_curr_patch(self.current_image)
-        self._update_history(patch)
+        if update_history:
+            self._update_history(patch)
         return {
             'history': self.history.get_history_dict(),
         }
@@ -147,15 +153,44 @@ class Environment(gym.Env):
         patch_seg = self._get_curr_patch(self.current_seg)
         patch_seg.zero_()
         not_seen = self.current_seg.sum(dim=(1, 2))
-        rewarded = (not_seen/self.seg_sizes) <= 1 - self.seen_threshold
+        rewarded = (not_seen/self.seg_sizes) <= .9
         self.seg_sizes[rewarded] = 0
-        rewarded = rewarded.to(torch.int)*.25
+        rewarded = rewarded.to(torch.int)
         reward = rewarded.sum().item()
+        return reward
+    
+    def _reward_seg_dense(self):
+        '''
+        reward based on the portion of the seg seen in the current patch
+        '''
+        patch_seg = self._get_curr_patch(self.current_seg)
+        seen = patch_seg.sum(dim=(1, 2))
+        reward = ((seen/self.seg_sizes) * 1)
+        reward.nan_to_num_()
+        reward = reward.sum().item()
+        patch_seg.zero_()
+        return reward
+    
+    def _reward_missed(self):
+        return -(self.seg_sizes != 0).sum()
+    
+    def _reward_missed_soft(self):
+        '''
+        reward based on the missed portion of each segment
+        '''
+        not_seen = self.current_seg.sum(dim=(1, 2))
+        reward = -(not_seen/self.seg_sizes) * 1
+        reward.nan_to_num_()
+        reward = reward.sum().item()
         return reward
 
     def _reward_return(self):
-        reward = -.15 if self.seen_patches[self.row, self.col] else 0
+        reward = -1/6 if self.seen_patches[self.row, self.col] else 0
         self.seen_patches[self.row, self.col] = True
+        return reward
+    
+    def _reward_step(self):
+        reward = -1/12 + self._reward_return()
         return reward
 
     def _covered_done(self):
@@ -173,16 +208,21 @@ class Environment(gym.Env):
             self.row = self.row + 1 if self.row < self.max_row else self.row
         elif Actions(action) == Actions.LEFT:
             self.col = self.col - 1 if self.col > 0 else self.col
+        elif Actions(action) == Actions.END:
+            reward_missed = self._reward_missed_soft()
+            reward_missed = np.clip(reward_missed, -10, 10)
+            return self._get_obs(update_history=False), reward_missed, True, False, {}
         else:
             raise ValueError("Invalid action")
 
         obs = self._get_obs()
         done = self._covered_done()
-        reward_seg = self._reward_seg()
-        reward_return = self._reward_return()
-        reward_step = -.1
+        reward_seg = self._reward_seg_dense()
+        # reward_return = self._reward_return()
+        reward_step = -1/12
         # reward_done = 100 if done else 0
-        reward = reward_seg
+        reward = reward_seg + reward_step
+        reward = np.clip(reward, -10, 10)
         truncated = False
         info = {}
         return obs, reward, done, truncated, info
@@ -217,7 +257,6 @@ class Environment(gym.Env):
         image = image * self.render_mask
         image[0] += curr_indicator
         image.clamp_(0, 1)
-        
 
         image = einops.rearrange(image, 'c h w -> h w c')
         return image
