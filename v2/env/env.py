@@ -93,7 +93,9 @@ class Environment(gym.Env):
         self.captions = self.dataloader.dataset.captions_dict[self.image_id]
         self.max_row, self.max_col = (self.height - self.patch_size[0]) // self.patch_size[0], (
             self.width - self.patch_size[1]) // self.patch_size[1]
-        self.row, self.col = self.max_row // 2, self.max_col // 2
+        # self.row, self.col = self.max_row // 2, self.max_col // 2
+        self.row, self.col = np.random.randint(0, self.max_row + 1), np.random.randint(
+            0, self.max_col + 1)
 
         # init planes
         self.seen_patches = torch.zeros(
@@ -128,7 +130,8 @@ class Environment(gym.Env):
     def _get_curr_patch(self, base):
         return self._get_patch(base, self.row, self.col)
 
-    def _update_history(self, new_patch):
+    def _update_history(self):
+        new_patch = self._get_curr_patch(self.current_image)
         self.history.append(new_patch, self.row, self.col,
                             right=self._get_patch(
                                 self.current_image, self.row, self.col+1) if self.col < self.max_col else None,
@@ -142,9 +145,8 @@ class Environment(gym.Env):
         return self.history
 
     def _get_obs(self, update_history=True):
-        patch = self._get_curr_patch(self.current_image)
         if update_history:
-            self._update_history(patch)
+            self._update_history()
         return {
             'history': self.history.get_history_dict(),
         }
@@ -186,7 +188,6 @@ class Environment(gym.Env):
 
     def _reward_return(self):
         reward = -1/6 if self.seen_patches[self.row, self.col] else 0
-        self.seen_patches[self.row, self.col] = True
         return reward
     
     def _reward_step(self):
@@ -225,6 +226,8 @@ class Environment(gym.Env):
         reward = np.clip(reward, -10, 10)
         truncated = False
         info = {}
+        
+        self.seen_patches[self.row, self.col] = True
         return obs, reward, done, truncated, info
 
     def _get_render_image(self):
