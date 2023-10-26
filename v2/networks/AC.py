@@ -167,7 +167,7 @@ class TransformerStepCritic(nn.Module):
     def forward(self, obs, **kwargs):
         src, tgt, padded_mask = self.preprocess(obs)
         emb = self.transformer(
-            src, tgt, src_key_padding_mask=~padded_mask, memory_key_padding_mask=~padded_mask).mean(1)
+            src, tgt, src_key_padding_mask=padded_mask, memory_key_padding_mask=padded_mask).mean(1)
         value = self.linear(emb)
         return value
 
@@ -190,8 +190,8 @@ class TransformerStepActor(nn.Module):
 
     def forward(self, obs, **kwargs):
         src, tgt, padded_mask = self.preprocess(obs)
-        emb = self.cross_attention(
-            src, tgt, src_key_padding_mask=~padded_mask, memory_key_padding_mask=~padded_mask)
+        emb = self.transformer(
+            src, tgt, src_key_padding_mask=padded_mask, memory_key_padding_mask=padded_mask)
         avg_emb = emb.mean(1, keepdim=True)
         act_logits = self.act_linear(emb).squeeze(-1)
         end_logit = self.end_linear(avg_emb).squeeze(-1)

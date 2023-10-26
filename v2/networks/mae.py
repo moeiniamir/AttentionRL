@@ -146,7 +146,7 @@ class OrderEmbeddingBaseNetwork(BaseNetwork):
 class PerStepMAE(OrderEmbeddingBaseNetwork):
     def __init__(self, patch_size, n_last_positions, *args, **kwargs):
         super().__init__(patch_size, 0, *args, **kwargs)
-        ord_emb = get_1d_sincos_pos_embed_from_grid(self.output_dim, np.range(n_last_positions))
+        ord_emb = get_1d_sincos_pos_embed_from_grid(self.output_dim, np.arange(n_last_positions))
         ord_emb = torch.from_numpy(ord_emb).unsqueeze(0).to(torch.float32)
         self.register_buffer('mae_ord_emb', ord_emb)
     
