@@ -12,6 +12,7 @@ import einops
 from .history import History
 from .mul_limited_history import LimitedHistory
 from .mae_limited_history import MAELimitedHistory
+from .mae_history_adj import MAEHistoryAdj
 
 
 class Actions(Enum):
@@ -25,7 +26,8 @@ class Actions(Enum):
 class Environment(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 4}
 
-    def __init__(self, dataset, patch_size=(64, 64), max_len=None, n_last_positions=None):
+    def __init__(self, dataset, patch_size=(64, 64), max_len=None, n_last_positions=None, history_type=None):
+        self.history_type = history_type
         self.dataloader = D.DataLoader(dataset, batch_size=1, shuffle=True)
         self.iterator = iter(self.dataloader)
         self.patch_size = patch_size
@@ -100,15 +102,22 @@ class Environment(gym.Env):
         # init planes
         self.seen_patches = torch.zeros(
             (self.max_row + 1, self.max_col + 1)).to(torch.bool)
-        if self.max_len is None and self.n_last_positions:
+        if self.history_type == 'maehistory':
+            assert self.max_len is None and self.n_last_positions
             self.history = MAEHistory(
                 self.width, self.height, self.patch_size, self.n_last_positions)
-        elif self.max_len is not None and self.n_last_positions:
+        elif self.history_type == 'maelimitedhistory':
+            assert self.max_len is not None and self.n_last_positions
             self.history = MAELimitedHistory(
                 self.max_len, self.width, self.height, self.patch_size, self.n_last_positions)
-        else:
+        elif self.history_type == 'limitedhistory':
             self.history = LimitedHistory(
                 self.max_len, self.width, self.height, self.patch_size)
+        elif self.history_type == 'maehistoryadj':
+            self.history = MAEHistoryAdj(
+                self.width, self.height, self.patch_size, self.n_last_positions)
+        else:
+            raise Exception('wrong history type')
 
         # init render
         self.im = None
@@ -138,9 +147,9 @@ class Environment(gym.Env):
                             left=self._get_patch(
                                 self.current_image, self.row, self.col-1) if self.col > 0 else None,
                             top=self._get_patch(
-                                self.current_image, self.row+1, self.col) if self.row < self.max_row else None,
+                                self.current_image, self.row-1, self.col) if self.row < self.max_row else None,
                             bot=self._get_patch(
-                                self.current_image, self.row-1, self.col) if self.row > 0 else None,
+                                self.current_image, self.row+1, self.col) if self.row > 0 else None,
                             )
         return self.history
 
@@ -150,10 +159,18 @@ class Environment(gym.Env):
         return {
             'history': self.history.get_history_dict(),
         }
+        
+    def _adj_seg_zero_helper(self):
+        self._get_patch(self.current_seg, self.row+1, self.col).zero_()
+        self._get_patch(self.current_seg, self.row-1, self.col).zero_()
+        self._get_patch(self.current_seg, self.row, self.col+1).zero_()
+        self._get_patch(self.current_seg, self.row, self.col-1).zero_()
 
     def _reward_seg(self):
         patch_seg = self._get_curr_patch(self.current_seg)
         patch_seg.zero_()
+        if self.history_type == "MAEHistoryAdj":
+            self._adj_seg_zero_helper()
         not_seen = self.current_seg.sum(dim=(1, 2))
         rewarded = (not_seen/self.seg_sizes) <= .9
         self.seg_sizes[rewarded] = 0
@@ -167,10 +184,17 @@ class Environment(gym.Env):
         '''
         patch_seg = self._get_curr_patch(self.current_seg)
         seen = patch_seg.sum(dim=(1, 2))
+        if self.history_type == "MAEHistoryAdj": # for future projects: don't rely on selection to avoid this shitshow. use masks EVERYWHERE :(
+            seen += self._get_patch(self.current_seg, self.row+1, self.col).sum(dim=(1, 2))
+            seen += self._get_patch(self.current_seg, self.row-1, self.col).sum(dim=(1, 2))
+            seen += self._get_patch(self.current_seg, self.row, self.col+1).sum(dim=(1, 2))
+            seen += self._get_patch(self.current_seg, self.row, self.col-1).sum(dim=(1, 2))
         reward = ((seen/self.seg_sizes) * 1)
         reward.nan_to_num_()
         reward = reward.sum().item()
         patch_seg.zero_()
+        if self.history_type == "MAEHistoryAdj":
+            self._adj_seg_zero_helper()
         return reward
     
     def _reward_missed(self):
