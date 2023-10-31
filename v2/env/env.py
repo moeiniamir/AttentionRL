@@ -146,10 +146,10 @@ class Environment(gym.Env):
                                 self.current_image, self.row, self.col+1) if self.col < self.max_col else None,
                             left=self._get_patch(
                                 self.current_image, self.row, self.col-1) if self.col > 0 else None,
-                            top=self._get_patch(
-                                self.current_image, self.row-1, self.col) if self.row < self.max_row else None,
                             bot=self._get_patch(
-                                self.current_image, self.row+1, self.col) if self.row > 0 else None,
+                                self.current_image, self.row+1, self.col) if self.row < self.max_row else None,
+                            top=self._get_patch(
+                                self.current_image, self.row-1, self.col) if self.row > 0 else None,
                             )
         return self.history
 
@@ -169,7 +169,7 @@ class Environment(gym.Env):
     def _reward_seg(self):
         patch_seg = self._get_curr_patch(self.current_seg)
         patch_seg.zero_()
-        if self.history_type == "MAEHistoryAdj":
+        if type(self.history) == MAEHistoryAdj:
             self._adj_seg_zero_helper()
         not_seen = self.current_seg.sum(dim=(1, 2))
         rewarded = (not_seen/self.seg_sizes) <= .9
@@ -184,7 +184,7 @@ class Environment(gym.Env):
         '''
         patch_seg = self._get_curr_patch(self.current_seg)
         seen = patch_seg.sum(dim=(1, 2))
-        if self.history_type == "MAEHistoryAdj": # for future projects: don't rely on selection to avoid this shitshow. use masks EVERYWHERE :(
+        if type(self.history) == MAEHistoryAdj: # for future projects: don't rely on selection to avoid this shitshow. use masks EVERYWHERE :(
             seen += self._get_patch(self.current_seg, self.row+1, self.col).sum(dim=(1, 2))
             seen += self._get_patch(self.current_seg, self.row-1, self.col).sum(dim=(1, 2))
             seen += self._get_patch(self.current_seg, self.row, self.col+1).sum(dim=(1, 2))
@@ -193,7 +193,7 @@ class Environment(gym.Env):
         reward.nan_to_num_()
         reward = reward.sum().item()
         patch_seg.zero_()
-        if self.history_type == "MAEHistoryAdj":
+        if type(self.history) == MAEHistoryAdj:
             self._adj_seg_zero_helper()
         return reward
     
