@@ -26,7 +26,8 @@ class Actions(Enum):
 class Environment(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 4}
 
-    def __init__(self, dataset, patch_size=(64, 64), max_len=None, n_last_positions=None, history_type=None):
+    def __init__(self, dataset, patch_size=(64, 64), max_len=None, n_last_positions=None, history_type=None, time_limit=None,
+                 ):
         self.history_type = history_type
         self.dataloader = D.DataLoader(dataset, batch_size=1, shuffle=True)
         self.iterator = iter(self.dataloader)
@@ -44,6 +45,8 @@ class Environment(gym.Env):
             'center': spaces.Box(low=0, high=255, shape=(3, self.patch_size[0], self.patch_size[1]), dtype=np.float16),
         })
         self.action_space = spaces.Discrete(len(Actions))
+        self.time_limit = np.uint32(time_limit) if time_limit is not None else np.nan
+        self.elapsed_steps = None
 
     def reset(self, **kwargs):
         try:
@@ -118,6 +121,9 @@ class Environment(gym.Env):
                 self.width, self.height, self.patch_size, self.n_last_positions)
         else:
             raise Exception('wrong history type')
+        
+        # init timelimit
+        self.elapsed_steps = 0
 
         # init render
         self.im = None
@@ -250,6 +256,10 @@ class Environment(gym.Env):
         reward = np.clip(reward, -10, 10)
         truncated = False
         info = {}
+        
+        self.elapsed_steps += 1
+        if self.elapsed_steps >= self.time_limit:
+            truncated = True
         
         self.seen_patches[self.row, self.col] = True
         return obs, reward, done, truncated, info
