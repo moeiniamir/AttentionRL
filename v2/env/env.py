@@ -26,8 +26,13 @@ class Actions(Enum):
 class Environment(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 4}
 
-    def __init__(self, dataset, patch_size=(64, 64), max_len=None, n_last_positions=None, history_type=None, time_limit=None,
-                 ):
+    def __init__(self, dataset,
+                 patch_size=(64, 64),
+                 max_len=None,
+                 n_last_positions=None,
+                 history_type=None,
+                 time_limit=None,
+                 wandb_run=None):
         self.history_type = history_type
         self.dataloader = D.DataLoader(dataset, batch_size=1, shuffle=True)
         self.iterator = iter(self.dataloader)
@@ -45,8 +50,12 @@ class Environment(gym.Env):
             'center': spaces.Box(low=0, high=255, shape=(3, self.patch_size[0], self.patch_size[1]), dtype=np.float16),
         })
         self.action_space = spaces.Discrete(len(Actions))
-        self.time_limit = np.uint32(time_limit) if time_limit is not None else np.nan
+        self.time_limit = np.uint32(
+            time_limit) if time_limit is not None else np.nan
         self.elapsed_steps = None
+        self.wandb_run = wandb_run
+        self.ratio_quantiles = [.2, .4, .6, .8]
+        self.step_quantiles = [10, 20, 30, 50, 80]
 
     def reset(self, **kwargs):
         try:
@@ -121,9 +130,16 @@ class Environment(gym.Env):
                 self.width, self.height, self.patch_size, self.n_last_positions)
         else:
             raise Exception('wrong history type')
-        
+
         # init timelimit
         self.elapsed_steps = 0
+
+        # init stats
+        self.rews = []
+        self.ratio_quantile_idx = 0
+        self.ratio_quantiles_vals = [None] * len(self.ratio_quantiles)
+        self.step_quantile_idx = 0
+        self.step_quantiles_vals = [None] * len(self.step_quantiles)
 
         # init render
         self.im = None
@@ -165,7 +181,7 @@ class Environment(gym.Env):
         return {
             'history': self.history.get_history_dict(),
         }
-        
+
     def _adj_seg_zero_helper(self):
         self._get_patch(self.current_seg, self.row+1, self.col).zero_()
         self._get_patch(self.current_seg, self.row-1, self.col).zero_()
@@ -173,6 +189,9 @@ class Environment(gym.Env):
         self._get_patch(self.current_seg, self.row, self.col-1).zero_()
 
     def _reward_seg(self):
+        '''
+        incompatible with whoever uses `self.seg_sizes`
+        '''
         patch_seg = self._get_curr_patch(self.current_seg)
         patch_seg.zero_()
         if type(self.history) == MAEHistoryAdj:
@@ -183,18 +202,22 @@ class Environment(gym.Env):
         rewarded = rewarded.to(torch.int)
         reward = rewarded.sum().item()
         return reward
-    
+
     def _reward_seg_dense(self):
         '''
         reward based on the portion of the seg seen in the current patch
         '''
         patch_seg = self._get_curr_patch(self.current_seg)
         seen = patch_seg.sum(dim=(1, 2))
-        if type(self.history) == MAEHistoryAdj: # for future projects: don't rely on selection to avoid this shitshow. use masks EVERYWHERE :(
-            seen += self._get_patch(self.current_seg, self.row+1, self.col).sum(dim=(1, 2))
-            seen += self._get_patch(self.current_seg, self.row-1, self.col).sum(dim=(1, 2))
-            seen += self._get_patch(self.current_seg, self.row, self.col+1).sum(dim=(1, 2))
-            seen += self._get_patch(self.current_seg, self.row, self.col-1).sum(dim=(1, 2))
+        if type(self.history) == MAEHistoryAdj:  # for future projects: don't rely on selection to avoid this shitshow. use masks EVERYWHERE :(
+            seen += self._get_patch(self.current_seg,
+                                    self.row+1, self.col).sum(dim=(1, 2))
+            seen += self._get_patch(self.current_seg,
+                                    self.row-1, self.col).sum(dim=(1, 2))
+            seen += self._get_patch(self.current_seg,
+                                    self.row, self.col+1).sum(dim=(1, 2))
+            seen += self._get_patch(self.current_seg,
+                                    self.row, self.col-1).sum(dim=(1, 2))
         reward = ((seen/self.seg_sizes) * 1)
         reward.nan_to_num_()
         reward = reward.sum().item()
@@ -202,10 +225,10 @@ class Environment(gym.Env):
         if type(self.history) == MAEHistoryAdj:
             self._adj_seg_zero_helper()
         return reward
-    
+
     def _reward_missed(self):
         return -(self.seg_sizes != 0).sum()
-    
+
     def _reward_missed_soft(self):
         '''
         reward based on the missed portion of each segment
@@ -219,7 +242,7 @@ class Environment(gym.Env):
     def _reward_return(self):
         reward = -1/6 if self.seen_patches[self.row, self.col] else 0
         return reward
-    
+
     def _reward_step(self):
         reward = -1/12 + self._reward_return()
         return reward
@@ -229,6 +252,38 @@ class Environment(gym.Env):
             return True
         else:
             return False
+
+    def log_eoe_stats(self):
+        not_seen = self.current_seg.sum(dim=(1, 2))
+        not_seen_ratio = not_seen/self.seg_sizes
+        mean_not_seen_ratio = not_seen_ratio.mean()
+        std_not_seen_ratio = not_seen_ratio.std()
+        not_touched_segs_ratio = (
+            not_seen == self.seg_sizes).sum()/len(not_seen)
+        std_rewards = torch.tensor(self.rews).std()
+
+        self.wandb_run.log({
+            **{
+                k: self.ratio_quantiles_vals[i] for i, k in enumerate(self.ratio_quantiles)
+            },
+            **{
+                k: self.step_quantiles_vals[i] for i, k in enumerate(self.step_quantiles_vals)
+            },
+            'mean_not_seen_ratio': mean_not_seen_ratio,
+            'std_not_seen_ratio': std_not_seen_ratio,
+            'not_touched_segs_ratio': not_touched_segs_ratio,
+            'std_rewards': std_rewards
+        }, self.wandb_run.step)
+
+    def store_quantile_stats(self):
+        not_seen = self.current_seg.sum(dim=(1, 2))
+        min_not_seen_ratio = (not_seen/self.seg_sizes).min()
+        if self.ratio_quantile_idx < len(self.ratio_quantiles) and  min_not_seen_ratio >= self.ratio_quantiles[self.ratio_quantile_idx]:
+            self.ratio_quantiles_vals[self.ratio_quantile_idx] = self.elapsed_steps
+            self.ratio_quantile_idx += 1
+        if self.step_quantile_idx < len(self.step_quantiles) and self.elapsed_steps >= self.step_quantiles[self.step_quantile_idx]:
+            self.step_quantiles_vals[self.step_quantile_idx] = min_not_seen_ratio
+            self.step_quantile_idx += 1
 
     def step(self, action):
         if Actions(action) == Actions.UP:
@@ -254,14 +309,21 @@ class Environment(gym.Env):
         # reward_done = 100 if done else 0
         reward = reward_seg + reward_step
         reward = np.clip(reward, -10, 10)
+        self.rews.append(reward)
+
         truncated = False
-        info = {}
-        
         self.elapsed_steps += 1
         if self.elapsed_steps >= self.time_limit:
             truncated = True
-        
+
         self.seen_patches[self.row, self.col] = True
+
+        if self.wandb_run:
+            self.store_quantile_stats()
+            if truncated or done:
+                self.log_eoe_stats()
+
+        info = {}
         return obs, reward, done, truncated, info
 
     def _get_render_image(self):
