@@ -32,7 +32,7 @@ class Environment(gym.Env):
                  n_last_positions=None,
                  history_type=None,
                  time_limit=None,
-                 wandb_run=None):
+                 ):
         self.history_type = history_type
         self.dataloader = D.DataLoader(dataset, batch_size=1, shuffle=True)
         self.iterator = iter(self.dataloader)
@@ -53,7 +53,6 @@ class Environment(gym.Env):
         self.time_limit = np.uint32(
             time_limit) if time_limit is not None else np.nan
         self.elapsed_steps = None
-        self.wandb_run = wandb_run
         self.ratio_quantiles = [.2, .4, .6, .8]
         self.step_quantiles = [10, 20, 30, 50, 80]
 
@@ -262,18 +261,19 @@ class Environment(gym.Env):
             not_seen == self.seg_sizes).sum()/len(not_seen)
         std_rewards = torch.tensor(self.rews).std()
 
-        self.wandb_run.log({
+        log = {
             **{
-                k: self.ratio_quantiles_vals[i] for i, k in enumerate(self.ratio_quantiles)
+                str(k): self.ratio_quantiles_vals[i] for i, k in enumerate(self.ratio_quantiles) if self.ratio_quantiles_vals[i] is not None
             },
             **{
-                k: self.step_quantiles_vals[i] for i, k in enumerate(self.step_quantiles_vals)
+                str(k): self.step_quantiles_vals[i] for i, k in enumerate(self.step_quantiles) if self.step_quantiles_vals[i] is not None
             },
-            'mean_not_seen_ratio': mean_not_seen_ratio,
-            'std_not_seen_ratio': std_not_seen_ratio,
-            'not_touched_segs_ratio': not_touched_segs_ratio,
-            'std_rewards': std_rewards
-        }, self.wandb_run.step)
+            'mean_not_seen_ratio': mean_not_seen_ratio.item(),
+            'std_not_seen_ratio': std_not_seen_ratio.item(),
+            'not_touched_segs_ratio': not_touched_segs_ratio.item(),
+            'std_rewards_ep': std_rewards.item()
+        }
+        return log
 
     def store_quantile_stats(self):
         not_seen = self.current_seg.sum(dim=(1, 2))
@@ -282,8 +282,15 @@ class Environment(gym.Env):
             self.ratio_quantiles_vals[self.ratio_quantile_idx] = self.elapsed_steps
             self.ratio_quantile_idx += 1
         if self.step_quantile_idx < len(self.step_quantiles) and self.elapsed_steps >= self.step_quantiles[self.step_quantile_idx]:
-            self.step_quantiles_vals[self.step_quantile_idx] = min_not_seen_ratio
+            self.step_quantiles_vals[self.step_quantile_idx] = min_not_seen_ratio.item()
             self.step_quantile_idx += 1
+            
+    def get_logs(self, new_rew, finished):
+        self.rews.append(new_rew)
+        self.store_quantile_stats()
+        if finished:
+            return self.log_eoe_stats()        
+        return {}
 
     def step(self, action):
         if Actions(action) == Actions.UP:
@@ -297,10 +304,12 @@ class Environment(gym.Env):
         elif Actions(action) == Actions.END:
             reward_missed = self._reward_missed_soft()
             reward_missed = np.clip(reward_missed, -10, 10)
-            return self._get_obs(update_history=False), reward_missed, True, False, {}
+            logs = self.get_logs(reward_missed, True)            
+            return self._get_obs(update_history=False), reward_missed, True, False, {'logs':logs}
         else:
             raise ValueError("Invalid action")
 
+        # setup return values ---
         obs = self._get_obs()
         done = self._covered_done()
         reward_seg = self._reward_seg_dense()
@@ -309,22 +318,18 @@ class Environment(gym.Env):
         # reward_done = 100 if done else 0
         reward = reward_seg + reward_step
         reward = np.clip(reward, -10, 10)
-        self.rews.append(reward)
 
         truncated = False
         self.elapsed_steps += 1
         if self.elapsed_steps >= self.time_limit:
             truncated = True
-
+        
+        logs = self.get_logs(reward, done or truncated)
+        # ---
+        
         self.seen_patches[self.row, self.col] = True
 
-        if self.wandb_run:
-            self.store_quantile_stats()
-            if truncated or done:
-                self.log_eoe_stats()
-
-        info = {}
-        return obs, reward, done, truncated, info
+        return obs, reward, done, truncated, {'logs':logs}
 
     def _get_render_image(self):
         # row = self.row
