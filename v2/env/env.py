@@ -136,9 +136,9 @@ class Environment(gym.Env):
         # init stats
         self.rews = []
         self.ratio_quantile_idx = 0
-        self.ratio_quantiles_vals = [None] * len(self.ratio_quantiles)
+        self.ratio_quantiles_vals = [np.nan] * len(self.ratio_quantiles)
         self.step_quantile_idx = 0
-        self.step_quantiles_vals = [None] * len(self.step_quantiles)
+        self.step_quantiles_vals = [np.nan] * len(self.step_quantiles)
 
         # init render
         self.im = None
@@ -263,10 +263,10 @@ class Environment(gym.Env):
 
         log = {
             **{
-                str(k): self.ratio_quantiles_vals[i] for i, k in enumerate(self.ratio_quantiles) if self.ratio_quantiles_vals[i] is not None
+                str(k): self.ratio_quantiles_vals[i] for i, k in enumerate(self.ratio_quantiles)
             },
             **{
-                str(k): self.step_quantiles_vals[i] for i, k in enumerate(self.step_quantiles) if self.step_quantiles_vals[i] is not None
+                str(k): self.step_quantiles_vals[i] for i, k in enumerate(self.step_quantiles)
             },
             'mean_not_seen_ratio': mean_not_seen_ratio.item(),
             'std_not_seen_ratio': std_not_seen_ratio.item(),
@@ -277,12 +277,12 @@ class Environment(gym.Env):
 
     def store_quantile_stats(self):
         not_seen = self.current_seg.sum(dim=(1, 2))
-        min_not_seen_ratio = (not_seen/self.seg_sizes).min()
-        if self.ratio_quantile_idx < len(self.ratio_quantiles) and  min_not_seen_ratio >= self.ratio_quantiles[self.ratio_quantile_idx]:
-            self.ratio_quantiles_vals[self.ratio_quantile_idx] = self.elapsed_steps
+        max_not_seen_ratio = (not_seen/self.seg_sizes).max()
+        if self.ratio_quantile_idx < len(self.ratio_quantiles) and  max_not_seen_ratio <= self.ratio_quantiles[self.ratio_quantile_idx]:
+            self.ratio_quantiles_vals[self.ratio_quantile_idx] = np.float32(self.elapsed_steps)
             self.ratio_quantile_idx += 1
         if self.step_quantile_idx < len(self.step_quantiles) and self.elapsed_steps >= self.step_quantiles[self.step_quantile_idx]:
-            self.step_quantiles_vals[self.step_quantile_idx] = min_not_seen_ratio.item()
+            self.step_quantiles_vals[self.step_quantile_idx] = max_not_seen_ratio.item()
             self.step_quantile_idx += 1
             
     def get_logs(self, new_rew, finished):
