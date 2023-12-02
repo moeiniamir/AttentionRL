@@ -175,10 +175,13 @@ class Environment(gym.Env):
         return self.history
 
     def _get_obs(self, update_history=True):
+        prev_history = self.history.running_canvas.clone()
         if update_history:
             self._update_history()
         return {
             'history': self.history.get_history_dict(),
+            'img': self.current_image,
+            'prev_history': prev_history
         }
 
     def _adj_seg_zero_helper(self):
@@ -240,10 +243,6 @@ class Environment(gym.Env):
 
     def _reward_return(self):
         reward = -1/6 if self.seen_patches[self.row, self.col] else 0
-        return reward
-
-    def _reward_step(self):
-        reward = -1/12 + self._reward_return()
         return reward
 
     def _covered_done(self):
@@ -312,11 +311,11 @@ class Environment(gym.Env):
         # setup return values ---
         obs = self._get_obs()
         done = self._covered_done()
-        reward_seg = self._reward_seg_dense()
+        # reward_seg = self._reward_seg_dense()
         # reward_return = self._reward_return()
-        reward_step = -1/12
+        # reward_step = -1/12
         # reward_done = 100 if done else 0
-        reward = reward_seg + reward_step
+        reward = 0.0
         reward = np.clip(reward, -10, 10)
 
         truncated = False
