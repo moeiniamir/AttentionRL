@@ -205,6 +205,7 @@ class AdjTransC(nn.Module):
     def __init__(self, preprocess, d_model, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.linear = nn.Linear(d_model, 1)
+        # self.to_positive = nn.Softplus()
 
         self.preprocess = preprocess
         self.transformer = nn.Transformer(d_model=d_model, nhead=4, num_decoder_layers=4,
@@ -216,6 +217,7 @@ class AdjTransC(nn.Module):
         emb = self.transformer(lhs, tgt, src_key_padding_mask=~running_kmask, memory_key_padding_mask=~running_kmask)
         emb = emb.mean(1)
         value = self.linear(emb)
+        # value = self.to_positive(value)
         return value
 
 
