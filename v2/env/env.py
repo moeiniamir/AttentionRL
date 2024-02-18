@@ -144,7 +144,7 @@ class Environment(gym.Env):
         self.im = None
         self.render_mask = None
 
-        _ = self._reward_return()  # to set the first patch as seen
+        _ = self.update_seen_patches()  # to set the first patch as seen
         initial_obs = self._get_obs()  # to add the first patch to history
         _ = self._get_render_image()  # to set the first patch as seen
 
@@ -242,7 +242,15 @@ class Environment(gym.Env):
         return reward
 
     def _reward_return(self):
-        reward = -1/6 if self.seen_patches[self.row, self.col] else 0
+        reward = 0
+        if self.row < self.max_row:
+            reward += -1/12 if self.seen_patches[self.row+1, self.col] else 1/12
+        if self.row > 0:
+            reward += -1/12 if self.seen_patches[self.row-1, self.col] else 1/12
+        if self.col < self.max_col:
+            reward += -1/12 if self.seen_patches[self.row, self.col+1] else 1/12
+        if self.col > 0:
+            reward += -1/12 if self.seen_patches[self.row, self.col-1] else 1/12
         return reward
 
     def _covered_done(self):
@@ -285,11 +293,23 @@ class Environment(gym.Env):
             self.step_quantile_idx += 1
             
     def get_logs(self, new_rew, finished):
+        return {} #! temp
         self.rews.append(new_rew)
         self.store_quantile_stats()
         if finished:
             return self.log_eoe_stats()        
         return {}
+
+    def update_seen_patches(self):
+        self.seen_patches[self.row, self.col] = True
+        if self.row < self.max_row:
+            self.seen_patches[self.row+1, self.col] = True
+        if self.row > 0:
+            self.seen_patches[self.row-1, self.col] = True
+        if self.col < self.max_col:
+            self.seen_patches[self.row, self.col+1] = True
+        if self.col > 0:
+            self.seen_patches[self.row, self.col-1] = True
 
     def step(self, action):
         if Actions(action) == Actions.UP:
@@ -326,7 +346,7 @@ class Environment(gym.Env):
         logs = self.get_logs(reward, done or truncated)
         # ---
         
-        self.seen_patches[self.row, self.col] = True
+        self.update_seen_patches()
 
         return obs, reward, done, truncated, {'logs':logs}
 
