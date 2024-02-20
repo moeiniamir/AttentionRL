@@ -242,15 +242,16 @@ class Environment(gym.Env):
         return reward
 
     def _reward_return(self):
-        reward = 0
-        if self.row < self.max_row:
-            reward += -1/12 if self.seen_patches[self.row+1, self.col] else 1/12
-        if self.row > 0:
-            reward += -1/12 if self.seen_patches[self.row-1, self.col] else 1/12
-        if self.col < self.max_col:
-            reward += -1/12 if self.seen_patches[self.row, self.col+1] else 1/12
-        if self.col > 0:
-            reward += -1/12 if self.seen_patches[self.row, self.col-1] else 1/12
+        # reward = 0
+        # if self.row < self.max_row:
+        #     reward += -1/12 if self.seen_patches[self.row+1, self.col] else 1/12
+        # if self.row > 0:
+        #     reward += -1/12 if self.seen_patches[self.row-1, self.col] else 1/12
+        # if self.col < self.max_col:
+        #     reward += -1/12 if self.seen_patches[self.row, self.col+1] else 1/12
+        # if self.col > 0:
+        #     reward += -1/12 if self.seen_patches[self.row, self.col-1] else 1/12
+        reward = -1/12 if self.seen_patches[self.row, self.col] else 1/12
         return reward
 
     def _covered_done(self):
@@ -332,10 +333,10 @@ class Environment(gym.Env):
         obs = self._get_obs()
         done = self._covered_done()
         # reward_seg = self._reward_seg_dense()
-        # reward_return = self._reward_return()
+        reward_return = self._reward_return()
         # reward_step = -1/12
         # reward_done = 100 if done else 0
-        reward = 0.0
+        reward = reward_return
         reward = np.clip(reward, -10, 10)
 
         truncated = False
@@ -347,7 +348,6 @@ class Environment(gym.Env):
         # ---
         
         self.update_seen_patches()
-
         return obs, reward, done, truncated, {'logs':logs}
 
     def _get_render_image(self):
