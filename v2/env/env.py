@@ -13,6 +13,7 @@ from .history import History
 from .mul_limited_history import LimitedHistory
 from .mae_limited_history import MAELimitedHistory
 from .mae_history_adj import MAEHistoryAdj
+from copy import deepcopy
 
 
 class Actions(Enum):
@@ -129,7 +130,7 @@ class Environment(gym.Env):
                 self.width, self.height, self.patch_size, self.n_last_positions)
         else:
             raise Exception('wrong history type')
-
+        
         # init timelimit
         self.elapsed_steps = 0
 
@@ -145,6 +146,7 @@ class Environment(gym.Env):
         self.render_mask = None
 
         _ = self.update_seen_patches()  # to set the first patch as seen
+        self.saved_history = {}
         initial_obs = self._get_obs()  # to add the first patch to history
         _ = self._get_render_image()  # to set the first patch as seen
 
@@ -175,12 +177,15 @@ class Environment(gym.Env):
         return self.history
 
     def _get_obs(self, update_history=True):
-        prev_history = self.history.running_canvas.clone()
+        prev_history = deepcopy(self.saved_history)
+        
         if update_history:
             self._update_history()
+            
+        self.saved_history = self.history.get_history_dict()
         return {
-            'history': self.history.get_history_dict(),
-            'img': self.current_image,
+            'history': self.saved_history,
+            # 'img': self.current_image,
             'prev_history': prev_history
         }
 
@@ -333,10 +338,10 @@ class Environment(gym.Env):
         obs = self._get_obs()
         done = self._covered_done()
         # reward_seg = self._reward_seg_dense()
-        reward_return = self._reward_return()
+        # reward_return = self._reward_return()
         # reward_step = -1/12
         # reward_done = 100 if done else 0
-        reward = reward_return
+        reward = 0
         reward = np.clip(reward, -10, 10)
 
         truncated = False
